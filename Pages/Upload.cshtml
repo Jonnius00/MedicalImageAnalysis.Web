@@ -11,8 +11,17 @@
     <button type="submit">Upload</button>
 </form>
 
-@if (Model.ImageUrl != null)
+@if (Model.DisplayImageUrl != null)
 {
     <h3>Preview:</h3>
-    <img src="@Model.ImageUrl" style="max-width: 800px; border: 1px solid #ccc;" />
+    <img src="@Model.DisplayImageUrl" style="max-width: 800px; border: 1px solid #ccc;" />
+}
+
+@if (Model.Modality != null)
+{
+    <div style="margin-top: 20px; padding: 10px; background: #f5f5f5; border-radius: 4px;">
+        <h4>DICOM Metadata</h4>
+        <p><strong>Patient:</strong> @Model.PatientName</p>
+        <p><strong>Modality:</strong> @Model.Modality</p>
+    </div>
 }

@@ -22,4 +22,7 @@ app.UseAuthorization();
 
 app.MapRazorPages();
 
+// Required for System.Drawing on non-Windows
+AppContext.SetSwitch("System.Drawing.EnableUnixSupport", true);
+
 app.Run();
