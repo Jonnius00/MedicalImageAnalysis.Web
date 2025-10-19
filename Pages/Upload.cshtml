@@ -1,0 +1,18 @@
+@page
+@model MedicalImageAnalysis.Web.Pages.UploadModel
+@{
+    ViewData["Title"] = "Upload Medical Image";
+}
+
+<h2>Upload Medical Image</h2>
+
+<form method="post" enctype="multipart/form-data">
+    <input type="file" asp-for="UploadedFile" accept=".dcm,.png,.jpg,.jpeg,.nii" />
+    <button type="submit">Upload</button>
+</form>
+
+@if (Model.ImageUrl != null)
+{
+    <h3>Preview:</h3>
+    <img src="@Model.ImageUrl" style="max-width: 800px; border: 1px solid #ccc;" />
+}
