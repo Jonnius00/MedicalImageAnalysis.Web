@@ -1,8 +1,10 @@
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.RazorPages;
 using System.IO;
+using System.Linq;
 using Dicom;
 using Dicom.Imaging;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.Extensions.Logging;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
@@ -40,96 +42,133 @@ using SixLabors.ImageSharp.Processing;
 
 namespace MedicalImageAnalysis.Web.Pages
 {
-    public class UploadModel : PageModel
+  public class UploadModel : PageModel
+  {
+    [BindProperty]
+    public IFormFile? UploadedFile { get; set; }
+    // Represents a file sent with the HttpRequest.
+
+    public string? DisplayImageUrl { get; private set; }
+    public string? Modality { get; private set; }
+    public string? PatientName { get; private set; }
+    private readonly ILogger<UploadModel> _logger;
+    public UploadModel(ILogger<UploadModel> logger)
     {
-        [BindProperty]
-        public IFormFile? UploadedFile { get; set; }
-
-        public string? DisplayImageUrl { get; private set; }
-        public string? Modality { get; private set; }
-        public string? PatientName { get; private set; }
-
-        private readonly ILogger<UploadModel> _logger;
-
-        public UploadModel(ILogger<UploadModel> logger)
-        {
-            _logger = logger;
-        }
-
-        public void OnGet() { }
-
-        public async Task<IActionResult> OnPostAsync()
-        {
-            if (UploadedFile == null || UploadedFile.Length == 0) return Page();
-
-            var uploadsFolder = Path.Combine("wwwroot", "images");
-            Directory.CreateDirectory(uploadsFolder);
-
-            var originalFileName = UploadedFile.FileName;
-            var fileExtension = Path.GetExtension(originalFileName).ToLowerInvariant();
-            var baseFileName = Guid.NewGuid().ToString();
-
-            string displayImagePath;
-
-            if (fileExtension == ".dcm")
-            {
-                // Handle DICOM
-                var dicomTempPath = Path.Combine(Path.GetTempPath(), baseFileName + ".dcm");
-                using (var stream = new FileStream(dicomTempPath, FileMode.Create))
-                {
-                    await UploadedFile.CopyToAsync(stream);
-                }
-
-                try
-                {
-                    var dicomFile = DicomFile.Open(dicomTempPath);
-                    var dataset = dicomFile.Dataset;
-
-                    // Extract metadata
-                    PatientName = dataset.GetString(DicomTag.PatientName) ?? "Unknown";
-                    Modality = dataset.GetString(DicomTag.Modality) ?? "Unknown";
-
-                    // Render image
-                    var image = new DicomImage(dicomFile.Dataset);
-                    using var rendered = image.RenderImage();
-                    using var bitmap = rendered.AsClonedBitmap(); // System.Drawing.Bitmap
-
-
-                    // Convert to PNG via ImageSharp
-                    var pngPath = Path.Combine(uploadsFolder, baseFileName + ".png");
-                    bitmap.Save(pngPath, System.Drawing.Imaging.ImageFormat.Png);
-
-                    // using var imageSharp = Image.LoadPixelData<Rgb24>(bitmap.LockBits(), bitmap.Width, bitmap.Height);
-                    // await imageSharp.SaveAsPngAsync(pngPath);
-
-                    displayImagePath = pngPath;
-                    DisplayImageUrl = $"/images/{baseFileName}.png";
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to process DICOM file");
-                    ModelState.AddModelError(string.Empty, "Invalid or unsupported DICOM file.");
-                    return Page();
-                }
-                finally
-                {
-                    // Clean up the temporary file
-                    if (System.IO.File.Exists(dicomTempPath)) System.IO.File.Delete(dicomTempPath);
-                }
-            }
-            else
-            {
-                // Handle standard images (PNG/JPG)
-                var imagePath = Path.Combine(uploadsFolder, baseFileName + fileExtension);
-                using (var stream = new FileStream(imagePath, FileMode.Create))
-                {
-                    await UploadedFile.CopyToAsync(stream);
-                }
-                displayImagePath = imagePath;
-                DisplayImageUrl = $"/images/{baseFileName}{fileExtension}";
-            }
-            return Page();
-        }
-
+        _logger = logger;
     }
+
+    public void OnGet() { }
+
+    public async Task<IActionResult> OnPostAsync()
+    {
+      if (UploadedFile == null || UploadedFile.Length == 0) return Page();
+
+      var uploadsFolder = Path.Combine("wwwroot", "images");
+      // Creates (sub)directories in specified path unless they already exist.
+      Directory.CreateDirectory(uploadsFolder);
+
+      var originalFileName = UploadedFile.FileName;
+      var fileExtension = Path.GetExtension(originalFileName).ToLowerInvariant();
+      // var baseFileName = Guid.NewGuid(); // .ToString();
+      var outputFileName = Guid.NewGuid() + ".png";
+      var outputFilePath = Path.Combine(uploadsFolder, outputFileName);
+
+      string displayImagePath;
+
+      // DICOM files are unpredictable. They may be corrupted, incomplete, 
+      // or use unsupported transfer syntaxes (e.g., JPEG2000 compression)
+      try 
+      {
+        if (fileExtension == ".dcm") {
+          _logger.LogInformation("Processing DICOM file: {FileName}", UploadedFile.FileName);
+
+          // Open DICOM from stream
+          /*
+          var dicomTempPath = Path.Combine(Path.GetTempPath(), baseFileName + ".dcm");
+          using (var stream = new FileStream(dicomTempPath, FileMode.Create))
+            { await UploadedFile.CopyToAsync(stream); }
+          var dicomFile = DicomFile.Open(dicomTempPath); */
+          // Open DICOM from stream
+          await using var stream = UploadedFile.OpenReadStream();
+          var dicomFile = await DicomFile.OpenAsync(stream);
+
+          var dataset = dicomFile.Dataset; 
+
+          // Extract metadata
+          PatientName = dataset.GetString(DicomTag.PatientName) ?? "Unknown";
+          Modality = dataset.GetString(DicomTag.Modality) ?? "Unknown";
+
+          // Extract metadata DEPRECATED, use .GetSequence(DicomTag.PatientName)
+          // PatientName = dataset.Get<string>(DicomTag.PatientName, "Anonymous");
+          // Modality = dataset.Get<string>(DicomTag.Modality, "Unknown");
+
+          var dicomImage = new DicomImage(dataset);
+          var rendered = dicomImage.RenderImage(); // Renders DICOM image to IImage.
+          var width = dicomImage.Width;
+          var height = dicomImage.Height;
+
+          /* // using Windows System.Drawing.Bitmap
+          var pngPath = Path.Combine(uploadsFolder, outputFileName);
+          using var bitmap = rendered.AsClonedBitmap();
+          bitmap.Save(pngPath, System.Drawing.Imaging.ImageFormat.Png); */
+
+          // Work with pixel data using ImageSharp
+          var pixelData = dicomImage.RenderImage().Pixels; // Dicom.IO.PinnedIntArray
+          
+          if (pixelData.Data == null || pixelData.Data.Length == 0)
+              throw new InvalidOperationException("DICOM image has no pixel data.");
+
+          // Create ImageSharp image from pixel data
+          // Normalize pixel values to 0-255 range for grayscale image
+          var pixels = new byte[width * height];
+          int min = pixelData.Data.Min();
+          int max = pixelData.Data.Max();
+          int range = Math.Max(max - min, 1);
+
+          for (int i = 0; i < pixelData.Data.Length; i++)
+          {
+              pixels[i] = (byte)(((pixelData.Data[i] - min) * 255) / range);
+          }
+
+          // Create ImageSharp image
+          var image = Image.LoadPixelData<L8>(pixels, width, height);
+          
+          // Save as PNG
+          await image.SaveAsPngAsync(outputFilePath);
+
+        } // Handle standard images (PNG/JPG)
+        else if (fileExtension is ".png" or ".jpg" or ".jpeg")
+        {
+          _logger.LogInformation("Processing standard image: {FileName}", UploadedFile.FileName);
+          await using var stream = new FileStream(outputFilePath, FileMode.Create);
+          await UploadedFile.CopyToAsync(stream);
+        }
+        else
+        {
+          ModelState.AddModelError(string.Empty, "Unsupported file format. Please upload DICOM, PNG, or JPG.");
+          return Page();
+        }
+
+        DisplayImageUrl = $"/images/{outputFileName}";
+        _logger.LogInformation("Image saved successfully: {Path}", outputFilePath);
+      }
+      catch (DicomFileException ex)
+      {
+        _logger.LogError(ex, "Invalid DICOM file: {FileName}", UploadedFile?.FileName);
+        ModelState.AddModelError(string.Empty, "The uploaded file is not a valid DICOM image.");
+      }
+      catch (IOException ex)
+      {
+        _logger.LogError(ex, "I/O error while saving image.");
+        ModelState.AddModelError(string.Empty, "Failed to save the uploaded file. Please try again.");
+      }
+      catch (Exception ex)
+      {
+        _logger.LogError(ex, "Unexpected error during image processing.");
+        ModelState.AddModelError(string.Empty, "An unexpected error occurred. Please try a different file.");
+      }
+      
+      return Page();
+    }
+  }
 }

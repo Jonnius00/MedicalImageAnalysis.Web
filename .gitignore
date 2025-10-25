@@ -40,20 +40,33 @@ app-example
 # .NET build artifacts
 bin/
 obj/
+
 # User-specific files
 *.user
 *.suo
 *.userosscache
 *.sln.docstates
+
 # Visual Studio Code
 .vscode/
 # Visual Studio 
 .vs/
+
 # ASP.NET/Entity Framework
 *.db
 *.mdf
 *.ldf
+
 # Logs
 *.log
+
 # Others
 TestResults/
+.continue/
+*.pid
+*.pid.lock
+*.lock
+*.pdb
+*.sqlite
+*.sqlite3
+wwwroot/images/
