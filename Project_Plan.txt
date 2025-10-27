@@ -1,0 +1,96 @@
+1. Building the medical image upload and display page in Razor. 
+
+  MedicalImageAnalysis.Web/
+  ├── Pages/                 # Razor Pages (UI)
+  ├── Services/              # Core logic (preprocessing, clustering, segmentation)
+  ├── Models/                # Data models (ImageData, PipelineConfig, etc.)
+  ├── Data/                  # File I/O, dataset loading (DICOM, NIfTI, PNG, etc.)
+  ├── wwwroot/               # Static assets (CSS, JS for interactive visualizations)
+  └── Utils/                 # Shared helpers (image conversion, metrics, timing)
+
+  Keeps algorithm logic decoupled from UI. 
+  Ensures I can later reuse the same core logic (or mirror it closely) in an another programming language. 
+
+  # Essential image & math libraries and minimal versions.
+  dotnet add package MathNet.Numerics --version 5.0.0
+  dotnet add package fo-dicom --version 5.1.5
+  dotnet add package fo-dicom.Drawing
+  dotnet add package SixLabors.ImageSharp --version 3.1.11
+  ? dotnet add package NIfTI.NET --version 1.0.0
+  
+  The pipeline order from assignment looked like this:
+  Load → Preprocessing (PCA) → Clustering (K-means) → Segmentation ( independetly Thresholding, Region Growing, Watershed) → Compare Results
+  Segmentation Algorithms should be implement as interchangeable strategies. 
+  ⚠️ Note: Medical images are often 3D, but many libraries are 2D-only. Decided initially focusing only on 2D for simplicity 
+
+2. Core Functional Modules.
+  Implement these as services or stateless functions:
+
+  A. Data Loading
+  Support common medical formats: DICOM via fo-dicom, 
+  and standard images (PNG/JPG).
+  NIfTI via custom or NIfTI.NET ( NIfTI support skipped for now). 
+  Load into a unified internal representation (e.g., float[,,] for 3D volumes or Bitmap for 2D slices).
+  ✅ Outcome: Reliable image preview on Windows (no crashes).
+
+  B. Segmentation Algorithms. Add Otsu Thresholding
+  After loading image → get pixel array ( byte[] or int[] ).
+  Implement Otsu via SixLabors.ImageSharp.Processing + custom threshold.
+  Save result as thresholded.png ( NOT SURE IF IT needed )
+  Display side-by-side: original vs. thresholded.
+  ✅ Outcome: User uploads image → sees segmented version instantly.
+
+  C. Add K-means Clustering
+  Use MathNet.Numerics (already in the stack).
+  Flatten image → 1D array of pixel values.
+  Allow user to choose number of clusters (K=3 or K=5).
+  Run K-means.
+  Map each pixel to its cluster center → create labeled image.
+  Colorize clusters (e.g. red, green, blue, etc) for visualization.
+  ✅ Outcome: “Clustered” view showing tissue types.
+
+  D. Preprocessing via PCA.
+  Use MathNet.Numerics.LinearAlgebra to compute PCA.
+  Reshape image to vector (for 2D images, we often apply PCA to patches or treat image as 1D vector).
+  Implement PCA on image patches or flattened slices (clarify dimensionality based on use case).
+  Reconstruct image from top 2 components.
+  Display “PCA-reconstructed” version.
+  ✅ Outcome: Transformed data + explained variance. User sees how PCA simplifies the image.
+
+  E. Segmentation Algorithms. Add Region Growing.
+  Hardcode seed = image center
+  Use queue-based flood fill
+  Compare neighbor intensity to seed ± tolerance
+  Output: binary mask of grown region
+  ✅ Outcome: Interactive-seeming segmentation (even if seed is fixed).
+
+  F. Segmentation Algorithms. Add Watershed.
+  Use binary image from Otsu as input
+  Compute distance transform (ImageSharp doesn’t have it → use simple approximation)
+  Find local maxima as markers
+  Simulate watershed with morphological flooding
+  Alternatively: Skip full watershed and show distance map as proxy. 
+  ✅ Outcome: “Watershed-like” segmentation for demo.
+
+3. Visualization & Comparison. 
+  After running any algorithm, show:
+  Original.
+  Result.
+  Toggle overlay ( use CSS opacity or <canvas> )
+  Add execution time (use Stopwatch)
+  ✅ Outcome: Side-by-side comparison with performance metrics.
+
+ 4. Pipeline Execution & State Management.
+  Model a Pipeline as a sequence of steps (e.g., Load → PCA → KMeans → Watershed).
+  Store steps in a list.
+  Execute in order.
+  Log execution time per step for performance comparison. 
+  Optionally: store pipeline configuration in session or as a serializable object.
+  Optionally: Allow users to save/load pipelines (JSON).
+
+ 5. Preparing for Cross-Language Consistency.
+  Even though project is starting in C#/.NET:
+  Document algorithm parameters precisely (e.g., “K-means: 5 clusters, 100 iterations, Euclidean distance”).
+  Use deterministic seeds for reproducibility.
+  Define input/output contracts (e.g., “Segmentation returns integer label map same size as input”).
+  Later, your second implementation (e.g., Python with PyQt or Flask) must match these specs exactly.

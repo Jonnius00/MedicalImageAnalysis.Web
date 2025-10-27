@@ -10,33 +10,19 @@ using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 
 /// <summary>
+/// 
 /// Current Implementation (Upload.cshtml.cs)
-/// Uses fo-dicom 4.x and fo-dicom.Drawing for DICOM handling.
+/// Uses fo-dicom 5.x and fo-dicom.Drawing for DICOM handling.
+/// 
 /// For DICOM files:
 /// Saves the uploaded file to a temp path.
 /// Opens the file with DicomFile.Open.
 /// Extracts metadata.
 /// Renders the image and converts it to a System.Drawing.Bitmap using AsClonedBitmap().
-/// Saves the bitmap directly as PNG using bitmap.Save.
+/// Saves the bitmap directly as PNG.
+///  
 /// For standard images (PNG/JPG):
 /// Saves the uploaded file directly to the images folder.
-/// No conversion to ImageSharp or pixel manipulation.
-/// Simple but works well for ONLY Windows.
-/// 
-/// Limitations:
-/// - Relies on System.Drawing.Common, which is Windows-specific and not cross-platform.
-/// - No pixel-level manipulation using ImageSharp for DICOM images.
-/// - Limited error handling for unsupported DICOM formats.
-/// - Does not handle multi-frame DICOM files.
-/// 
-/// Future Improvements:
-/// - Migrate to a fully cross-platform image processing library for DICOM rendering.
-/// - Implement pixel-level manipulations using ImageSharp if needed.
-/// - Enhance error handling and support for more DICOM modalities.
-/// - Add support for multi-frame DICOM files.
-/// - Consider using fo-dicom's built-in rendering capabilities instead of converting to System.Drawing.Bitmap.
-/// - Add validation for DICOM files (e.g., checking if the file is actually a DICOM file).
-/// - Optimize image saving and loading processes.
 /// 
 /// </summary>
 
@@ -48,8 +34,11 @@ namespace MedicalImageAnalysis.Web.Pages
     public IFormFile? UploadedFile { get; set; }
     // Represents a file sent with the HttpRequest.
 
-    public string? DisplayImageUrl { get; private set; }
-    public string? Modality { get; private set; }
+    [BindProperty]
+    public string? DisplayImageUrl { get; set; } // URL for the original normalized image.
+    
+    public string? OtsuImageUrl { get; private set; }
+    public string? Modality { get; private set; } 
     public string? PatientName { get; private set; }
     private readonly ILogger<UploadModel> _logger;
     public UploadModel(ILogger<UploadModel> logger)
@@ -73,26 +62,26 @@ namespace MedicalImageAnalysis.Web.Pages
       var outputFileName = Guid.NewGuid() + ".png";
       var outputFilePath = Path.Combine(uploadsFolder, outputFileName);
 
-      string displayImagePath;
-
       // DICOM files are unpredictable. They may be corrupted, incomplete, 
       // or use unsupported transfer syntaxes (e.g., JPEG2000 compression)
-      try 
+      try
       {
-        if (fileExtension == ".dcm") {
-          _logger.LogInformation("Processing DICOM file: {FileName}", UploadedFile.FileName);
+        if (fileExtension == ".dcm")
+        {
+          _logger.LogInformation("Uploading DICOM file: {FileName}", UploadedFile.FileName);
 
-          // Open DICOM from stream
+          // Open DICOM from stream. Option 1
           /*
           var dicomTempPath = Path.Combine(Path.GetTempPath(), baseFileName + ".dcm");
           using (var stream = new FileStream(dicomTempPath, FileMode.Create))
             { await UploadedFile.CopyToAsync(stream); }
           var dicomFile = DicomFile.Open(dicomTempPath); */
-          // Open DICOM from stream
+
+          // Open DICOM from stream. Option 2
           await using var stream = UploadedFile.OpenReadStream();
           var dicomFile = await DicomFile.OpenAsync(stream);
 
-          var dataset = dicomFile.Dataset; 
+          var dataset = dicomFile.Dataset;
 
           // Extract metadata
           PatientName = dataset.GetString(DicomTag.PatientName) ?? "Unknown";
@@ -103,47 +92,59 @@ namespace MedicalImageAnalysis.Web.Pages
           // Modality = dataset.Get<string>(DicomTag.Modality, "Unknown");
 
           var dicomImage = new DicomImage(dataset);
-          var rendered = dicomImage.RenderImage(); // Renders DICOM image to IImage.
           var width = dicomImage.Width;
           var height = dicomImage.Height;
 
           /* // using Windows System.Drawing.Bitmap
           var pngPath = Path.Combine(uploadsFolder, outputFileName);
+          var rendered = dicomImage.RenderImage(); // Renders DICOM image to IImage.
           using var bitmap = rendered.AsClonedBitmap();
           bitmap.Save(pngPath, System.Drawing.Imaging.ImageFormat.Png); */
 
-          // Work with pixel data using ImageSharp
+          // Work with pixel data using ImageSharp, e.g DIRECT PIXEL ACCESS
           var pixelData = dicomImage.RenderImage().Pixels; // Dicom.IO.PinnedIntArray
-          
-          if (pixelData.Data == null || pixelData.Data.Length == 0)
-              throw new InvalidOperationException("DICOM image has no pixel data.");
 
-          // Create ImageSharp image from pixel data
-          // Normalize pixel values to 0-255 range for grayscale image
-          var pixels = new byte[width * height];
+          if (pixelData.Data == null || pixelData.Data.Length == 0)
+            throw new InvalidOperationException("DICOM image has no pixel data.");
+
+          // Normalize pixel values to 0-255 range for grayscale image (required for display)
+          var grayscalePixels = new byte[width * height];
           int min = pixelData.Data.Min();
           int max = pixelData.Data.Max();
           int range = Math.Max(max - min, 1);
-
           for (int i = 0; i < pixelData.Data.Length; i++)
           {
-              pixels[i] = (byte)(((pixelData.Data[i] - min) * 255) / range);
+            grayscalePixels[i] = (byte)(((pixelData.Data[i] - min) * 255) / range);
           }
 
-          // Create ImageSharp image
-          var image = Image.LoadPixelData<L8>(pixels, width, height);
-          
-          // Save as PNG
-          await image.SaveAsPngAsync(outputFilePath);
+          // Create ImageSharp image from pixel data
+          var imageSharp = Image.LoadPixelData<L8>(grayscalePixels, width, height);
+
+/*           #region OTSU processing // TODO: put in a separate function
+          // Compute Otsu threshold
+          byte otsuThreshold = ComputeOtsuThreshold(grayscalePixels);
+
+          // Create binary image
+          using var binaryImage = ApplyOtsuThresholding(grayscalePixels, width, height, otsuThreshold);
+
+          // Save binary result
+          var otsuFileName = Guid.NewGuid() + "_otsu.png";
+          var otsuPath = Path.Combine("wwwroot", "images", otsuFileName);
+          await binaryImage.SaveAsPngAsync(otsuPath);
+          OtsuImageUrl = $"/images/{otsuFileName}"; // set route to Otsu processed file
+          #endregion OTSU processing */
+
+          // Save as PNG in wwwroot/images
+          await imageSharp.SaveAsPngAsync(outputFilePath);
 
         } // Handle standard images (PNG/JPG)
         else if (fileExtension is ".png" or ".jpg" or ".jpeg")
         {
-          _logger.LogInformation("Processing standard image: {FileName}", UploadedFile.FileName);
+          _logger.LogInformation("Uploading standard image: {FileName}", UploadedFile.FileName);
           await using var stream = new FileStream(outputFilePath, FileMode.Create);
           await UploadedFile.CopyToAsync(stream);
         }
-        else
+        else // Unsupported file format
         {
           ModelState.AddModelError(string.Empty, "Unsupported file format. Please upload DICOM, PNG, or JPG.");
           return Page();
@@ -167,8 +168,112 @@ namespace MedicalImageAnalysis.Web.Pages
         _logger.LogError(ex, "Unexpected error during image processing.");
         ModelState.AddModelError(string.Empty, "An unexpected error occurred. Please try a different file.");
       }
-      
+
       return Page();
     }
+
+    // Separate OnPostApplyOtsuAsync handler (more interactive, needs image caching)
+    public async Task<IActionResult> OnPostApplyOtsuAsync()
+    {
+      // Reload original image from DisplayImageUrl
+      if (!string.IsNullOrEmpty(DisplayImageUrl)) // DisplayImageUrl handling nullable
+      {
+        var imagePath = Path.Combine("wwwroot", DisplayImageUrl.TrimStart('/'));
+        using var originalImage = await Image.LoadAsync<L8>(imagePath);
+        var width = originalImage.Width;
+        var height = originalImage.Height;
+
+        // Extract pixel data from the image
+        var grayscalePixels = new byte[width * height];
+        originalImage.ProcessPixelRows(accessor =>
+        {
+          for (int y = 0; y < height; y++)
+          {
+            var row = accessor.GetRowSpan(y);
+            for (int x = 0; x < width; x++)
+            {
+              grayscalePixels[y*width + x] = row[x].PackedValue; // Get the pixel value
+            }
+          }
+        });
+
+        // Apply Otsu
+        byte otsuThreshold = ComputeOtsuThreshold(grayscalePixels);
+        using var binaryImage = ApplyOtsuThresholding(grayscalePixels, width, height, otsuThreshold);
+
+        // Save binary result
+        var otsuFileName = Guid.NewGuid() + "_otsu.png";
+        var otsuPath = Path.Combine("wwwroot", "images", otsuFileName);
+        await binaryImage.SaveAsPngAsync(otsuPath);
+        OtsuImageUrl = $"/images/{otsuFileName}";
+      }
+
+      return Page();
+    }
+
+    private Image<Rgba32> ApplyOtsuThresholding(byte[] grayscalePixels, int width, int height, byte threshold)
+    {
+      // Create binary image
+      var binaryImage = new Image<Rgba32>(width, height);
+      binaryImage.ProcessPixelRows(accessor =>
+      {
+        for (int y = 0; y < height; y++)
+        {
+          var row = accessor.GetRowSpan(y);
+          for (int x = 0; x < width; x++)
+          {
+            byte gray = grayscalePixels[y*width + x];
+            byte binary = gray >= threshold ? (byte)255 : (byte)0;
+            row[x] = new Rgba32(binary, binary, binary, 255);
+          }
+        }
+      });
+      
+      return binaryImage;
+    }
+
+    private byte ComputeOtsuThreshold(byte[] grayscalePixels)
+    {
+      const int L = 256; // byte is 0 to 255
+      var histogram = new int[L];
+
+      // Build histogram
+      foreach (var pixel in grayscalePixels)
+        histogram[pixel]++;
+
+      double totalPixels = grayscalePixels.Length;
+      double sum = 0;
+      for (int i = 0; i < L; i++)
+        sum += i * histogram[i];
+
+      double sumB = 0;
+      double wB = 0;
+      double wF = 0;
+      double varMax = 0;
+      byte threshold = 0;
+
+      for (byte i = 0; i < L; i++)
+      {
+        wB += histogram[i];
+        if (wB == 0) continue;
+
+        wF = totalPixels - wB;
+        if (wF == 0) break;
+
+        sumB += i * histogram[i];
+        double mB = sumB / wB;
+        double mF = (sum - sumB) / wF;
+
+        double varBetween = wB * wF * Math.Pow(mB - mF, 2);
+        if (varBetween > varMax)
+        {
+          varMax = varBetween;
+          threshold = i;
+        }
+      }
+
+      return threshold;
+    }
+        
   }
 }

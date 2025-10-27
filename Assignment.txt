@@ -1,0 +1,13 @@
+# Assignment  
+<description>
+
+The goal of this project is to develop a comprehensive, modular, and cross-platform graphical WEB APP or Desktop or mobile application for medical image analysis. 
+
+The core challenge is to implement the same functionality in 2 different programming languages 
+and ensure they can operate on the same data and produce comparable results. 
+
+The suite will allow users to load medical datasets, apply a pipeline of pre-processing PCA, clustering, and segmentation operations (watershed, region growing, thresholding). Implement as interchangeable strategies
+
+THen visually compare the results and performance of the algorithms and implementations.
+
+</description>

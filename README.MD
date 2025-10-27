@@ -53,7 +53,7 @@ A modular ASP.NET Core web application for uploading, visualizing, and analyzing
    dotnet run
    ```
 4. **Open in browser**  
-   Navigate to `https://localhost:5001` (or as indicated in console)
+   Navigate to `https://localhost:<port>` (port indicated in console)
 
 ## Project Structure
 
@@ -72,14 +72,16 @@ MedicalImageAnalysis.Web/
 
 ## Roadmap
 
-- [x] DICOM/PNG/JPG upload & preview
-- [ ] NIfTI support
-- [ ] PCA preprocessing
+- [+] DICOM/PNG/JPG upload & preview, DONE.
+- [-] NIfTI support, skipped.
+- [+] Segmentation algorithms ( Otsu )
 - [ ] K-means clustering
-- [ ] Segmentation algorithms (Otsu, region growing, watershed)
-- [ ] Interactive visualization (Canvas/SVG overlays)
+- [ ] PCA preprocessing.
+- [ ] Segmentation algorithms ( region growing)
+- [ ] Segmentation algorithms ( watershed )
+- [ ] Interactive visualization ( Canvas/SVG overlays )
 - [ ] Pipeline configuration UI
-- [ ] Save/load pipeline configs
+- [-] Save/load pipeline configs into JSON. Optional
 
 ## License
 
