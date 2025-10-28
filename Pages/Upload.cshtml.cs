@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
+using MedicalImageAnalysis.Web.Services; // Added for KMeansService
 
 /// <summary>
 /// 
@@ -35,15 +36,24 @@ namespace MedicalImageAnalysis.Web.Pages
     // Represents a file sent with the HttpRequest.
 
     [BindProperty]
-    public string? DisplayImageUrl { get; set; } // URL for the original normalized image.
+    public string? DisplayImageUrl { get; set; }
     
     public string? OtsuImageUrl { get; private set; }
+    
+    public string? KMeansImageUrl { get; private set; } // For K-means clustered image
+    
+    [BindProperty]
+    public int KMeans_K { get; set; } = 3;      // Number of clusters for K-means, default to 3
+    
     public string? Modality { get; private set; } 
     public string? PatientName { get; private set; }
     private readonly ILogger<UploadModel> _logger;
+    private readonly KMeansService _kMeansService;      // K-means service instance
+    
     public UploadModel(ILogger<UploadModel> logger)
     {
         _logger = logger;
+        _kMeansService = new KMeansService(); // Initialize K-means service
     }
 
     public void OnGet() { }
@@ -120,7 +130,7 @@ namespace MedicalImageAnalysis.Web.Pages
           // Create ImageSharp image from pixel data
           var imageSharp = Image.LoadPixelData<L8>(grayscalePixels, width, height);
 
-/*           #region OTSU processing // TODO: put in a separate function
+/*        #region OTSU processing // TODO: put in a separate function
           // Compute Otsu threshold
           byte otsuThreshold = ComputeOtsuThreshold(grayscalePixels);
 
@@ -210,6 +220,46 @@ namespace MedicalImageAnalysis.Web.Pages
 
       return Page();
     }
+    
+    // Handler for applying K-means clustering
+    public async Task<IActionResult> OnPostApplyKMeansAsync()
+    {
+      if (!string.IsNullOrEmpty(DisplayImageUrl) && KMeans_K > 1)
+      {
+        var imagePath = Path.Combine("wwwroot", DisplayImageUrl.TrimStart('/'));
+        using var originalImage = await Image.LoadAsync<L8>(imagePath);
+        var width = originalImage.Width;
+        var height = originalImage.Height;
+
+        // Extract pixel data from the image
+        var grayscalePixels = new byte[width * height];
+        originalImage.ProcessPixelRows(accessor =>
+        {
+          for (int y = 0; y < height; y++)
+          {
+            var row = accessor.GetRowSpan(y);
+            for (int x = 0; x < width; x++)
+            {
+              grayscalePixels[y * width + x] = row[x].PackedValue;
+            }
+          }
+        });
+
+        // Apply K-means clustering
+        var labels = _kMeansService.ApplyKMeans(grayscalePixels, width, height, KMeans_K);
+        
+        // Create a colorized image based on cluster labels
+        using var clusteredImage = CreateColorizedClusteredImage(labels, width, height, KMeans_K);
+        
+        // Save clustered result
+        var kmeansFileName = Guid.NewGuid() + "_kmeans.png";
+        var kmeansPath = Path.Combine("wwwroot", "images", kmeansFileName);
+        await clusteredImage.SaveAsPngAsync(kmeansPath);
+        KMeansImageUrl = $"/images/{kmeansFileName}";
+      }
+      
+      return Page();
+    }
 
     private Image<Rgba32> ApplyOtsuThresholding(byte[] grayscalePixels, int width, int height, byte threshold)
     {
@@ -230,6 +280,73 @@ namespace MedicalImageAnalysis.Web.Pages
       });
       
       return binaryImage;
+    }
+    
+    /// <summary>
+    /// Creates a colorized image based on cluster labels.
+    /// </summary>
+    private Image<Rgba32> CreateColorizedClusteredImage(int[] labels, int width, int height, int k)
+    {
+      var image = new Image<Rgba32>(width, height);
+      
+      // Define distinct colors for each cluster
+      var colors = GenerateDistinctColors(k);
+      
+      image.ProcessPixelRows(accessor =>
+      {
+        for (int y = 0; y < height; y++)
+        {
+          var row = accessor.GetRowSpan(y);
+          for (int x = 0; x < width; x++)
+          {
+            int index = y * width + x;
+            row[x] = colors[labels[index]];
+          }
+        }
+      });
+      
+      return image;
+    }
+    
+    /// <summary>
+    /// Generates distinct colors for cluster visualization.
+    /// </summary>
+    private Rgba32[] GenerateDistinctColors(int count)
+    {
+      var colors = new Rgba32[count];
+      
+      // Predefined set of distinct colors
+      var predefinedColors = new[]
+      {
+        new Rgba32(255, 0, 0),    // Red
+        new Rgba32(0, 255, 0),    // Green
+        new Rgba32(0, 0, 255),    // Blue
+        new Rgba32(255, 255, 0),  // Yellow
+        new Rgba32(255, 0, 255),  // Magenta
+        new Rgba32(0, 255, 255),  // Cyan
+        new Rgba32(255, 128, 0),  // Orange
+        new Rgba32(128, 0, 255),  // Purple
+      };
+      
+      for (int i = 0; i < count; i++)
+      {
+        if (i < predefinedColors.Length)
+        {
+          colors[i] = predefinedColors[i];
+        }
+        else
+        {
+          // Generate random color if we run out of predefined ones
+          var random = new Random(42 + i); // Use a fixed seed for consistency
+          colors[i] = new Rgba32(
+            (byte)random.Next(256),
+            (byte)random.Next(256),
+            (byte)random.Next(256)
+          );
+        }
+      }
+      
+      return colors;
     }
 
     private byte ComputeOtsuThreshold(byte[] grayscalePixels)
@@ -252,7 +369,7 @@ namespace MedicalImageAnalysis.Web.Pages
       double varMax = 0;
       byte threshold = 0;
 
-      for (byte i = 0; i < L; i++)
+      for (int i = 0; i < L; i++) // Changed from byte to int to avoid CS0652 warning
       {
         wB += histogram[i];
         if (wB == 0) continue;
@@ -268,7 +385,7 @@ namespace MedicalImageAnalysis.Web.Pages
         if (varBetween > varMax)
         {
           varMax = varBetween;
-          threshold = i;
+          threshold = (byte)i; // Cast to byte when assigning
         }
       }
 

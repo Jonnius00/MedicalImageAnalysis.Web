@@ -11,20 +11,38 @@
   <button type="submit">Upload</button>
 </form>
 
-@if (Model.DisplayImageUrl != null)
+@* PREVIEW *@
+@if (Model.DisplayImageUrl != null) 
 {
   <h3>Preview:</h3>
   <img src="@Model.DisplayImageUrl" style="max-width: 800px; border: 1px solid #ccc;" />
-  <form method="post" asp-page-handler="ApplyOtsu" style="margin-top: 10px;">
-      <input type="hidden" asp-for="DisplayImageUrl" />
-      <button type="submit">Apply Otsu Thresholding</button>
-  </form>
+  
+  <div style="margin-top: 10px;">
+    <form method="post" asp-page-handler="ApplyOtsu" style="display: inline-block; margin-right: 10px;">
+        <input type="hidden" asp-for="DisplayImageUrl" />
+        <input type="hidden" asp-for="KMeans_K" />
+        <button type="submit">Apply Otsu Thresholding</button>
+    </form>
+    
+    <form method="post" asp-page-handler="ApplyKMeans" style="display: inline-block;">
+        <input type="hidden" asp-for="DisplayImageUrl" />
+        <label for="KMeans_K">Clusters (K):</label>
+        <input asp-for="KMeans_K" type="number" min="2" max="10" style="width: 60px;" />
+        <button type="submit">Apply K-means</button>
+    </form>
+  </div>
 }
 
 @if (Model.OtsuImageUrl != null)
 {
     <h3>Otsu Result:</h3>
     <img src="@Model.OtsuImageUrl" style="max-width: 800px; border: 1px solid #ccc;" />
+}
+
+@if (Model.KMeansImageUrl != null)
+{
+    <h3>K-means Result (K=@Model.KMeans_K):</h3>
+    <img src="@Model.KMeansImageUrl" style="max-width: 800px; border: 1px solid #ccc;" />
 }
 
 @if (Model.Modality != null)

@@ -94,3 +94,7 @@
   Use deterministic seeds for reproducibility.
   Define input/output contracts (e.g., “Segmentation returns integer label map same size as input”).
   Later, your second implementation (e.g., Python with PyQt or Flask) must match these specs exactly.
+
+  6. Tech Debt: 
+    - Use a build system (e.g., MSBuild, Make, CMake, Gradle, Maven, etc.) 
+    - Don't generate a new GUID for filename for each algorithm run, add a suffix to uploaded.
