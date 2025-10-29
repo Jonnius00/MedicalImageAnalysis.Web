@@ -42,18 +42,30 @@ namespace MedicalImageAnalysis.Web.Pages
     
     public string? KMeansImageUrl { get; private set; } // For K-means clustered image
     
+    public string? PCAImageUrl { get; private set; } // For PCA preprocessed image
+    
+    public double[]? ExplainedVarianceRatios { get; private set; } // For PCA explained variance ratios
+    
     [BindProperty]
     public int KMeans_K { get; set; } = 3;      // Number of clusters for K-means, default to 3
     
+    [BindProperty]
+    public int PCAComponents { get; set; } = 2; // Number of PCA components, default to 2
+    
     public string? Modality { get; private set; } 
     public string? PatientName { get; private set; }
+    public int NumberOfFrames { get; private set; } = 1; // Number of frames in DICOM file
+
     private readonly ILogger<UploadModel> _logger;
     private readonly KMeansService _kMeansService;      // K-means service instance
-    
-    public UploadModel(ILogger<UploadModel> logger)
+    private readonly PCAPreprocessingService _pcaService; // PCA preprocessing service instance
+    private readonly string _baseFileName;
+    public UploadModel(ILogger<UploadModel> logger, KMeansService kMeansService, PCAPreprocessingService pcaService)
     {
-        _logger = logger;
-        _kMeansService = new KMeansService(); // Initialize K-means service
+      _logger = logger;
+      _kMeansService = kMeansService;
+      _pcaService = pcaService;
+      _baseFileName = Guid.NewGuid().ToString();
     }
 
     public void OnGet() { }
@@ -68,8 +80,7 @@ namespace MedicalImageAnalysis.Web.Pages
 
       var originalFileName = UploadedFile.FileName;
       var fileExtension = Path.GetExtension(originalFileName).ToLowerInvariant();
-      // var baseFileName = Guid.NewGuid(); // .ToString();
-      var outputFileName = Guid.NewGuid() + ".png";
+      var outputFileName = _baseFileName + ".png";
       var outputFilePath = Path.Combine(uploadsFolder, outputFileName);
 
       // DICOM files are unpredictable. They may be corrupted, incomplete, 
@@ -80,9 +91,9 @@ namespace MedicalImageAnalysis.Web.Pages
         {
           _logger.LogInformation("Uploading DICOM file: {FileName}", UploadedFile.FileName);
 
-          // Open DICOM from stream. Option 1
-          /*
-          var dicomTempPath = Path.Combine(Path.GetTempPath(), baseFileName + ".dcm");
+          /* // Open DICOM from stream. Option 1
+          // _baseFileName = Guid.NewGuid().ToString();
+          var dicomTempPath = Path.Combine(Path.GetTempPath(), _baseFileName + ".dcm");
           using (var stream = new FileStream(dicomTempPath, FileMode.Create))
             { await UploadedFile.CopyToAsync(stream); }
           var dicomFile = DicomFile.Open(dicomTempPath); */
@@ -96,6 +107,10 @@ namespace MedicalImageAnalysis.Web.Pages
           // Extract metadata
           PatientName = dataset.GetString(DicomTag.PatientName) ?? "Unknown";
           Modality = dataset.GetString(DicomTag.Modality) ?? "Unknown";
+          
+          // Check for number of frames
+          NumberOfFrames = dataset.GetSingleValueOrDefault(DicomTag.NumberOfFrames, 1);
+          _logger.LogInformation("DICOM file has {NumberOfFrames} frames", NumberOfFrames);
 
           // Extract metadata DEPRECATED, use .GetSequence(DicomTag.PatientName)
           // PatientName = dataset.Get<string>(DicomTag.PatientName, "Anonymous");
@@ -106,10 +121,9 @@ namespace MedicalImageAnalysis.Web.Pages
           var height = dicomImage.Height;
 
           /* // using Windows System.Drawing.Bitmap
-          var pngPath = Path.Combine(uploadsFolder, outputFileName);
           var rendered = dicomImage.RenderImage(); // Renders DICOM image to IImage.
           using var bitmap = rendered.AsClonedBitmap();
-          bitmap.Save(pngPath, System.Drawing.Imaging.ImageFormat.Png); */
+          bitmap.Save(outputFilePath, System.Drawing.Imaging.ImageFormat.Png); */
 
           // Work with pixel data using ImageSharp, e.g DIRECT PIXEL ACCESS
           var pixelData = dicomImage.RenderImage().Pixels; // Dicom.IO.PinnedIntArray
@@ -129,20 +143,6 @@ namespace MedicalImageAnalysis.Web.Pages
 
           // Create ImageSharp image from pixel data
           var imageSharp = Image.LoadPixelData<L8>(grayscalePixels, width, height);
-
-/*        #region OTSU processing // TODO: put in a separate function
-          // Compute Otsu threshold
-          byte otsuThreshold = ComputeOtsuThreshold(grayscalePixels);
-
-          // Create binary image
-          using var binaryImage = ApplyOtsuThresholding(grayscalePixels, width, height, otsuThreshold);
-
-          // Save binary result
-          var otsuFileName = Guid.NewGuid() + "_otsu.png";
-          var otsuPath = Path.Combine("wwwroot", "images", otsuFileName);
-          await binaryImage.SaveAsPngAsync(otsuPath);
-          OtsuImageUrl = $"/images/{otsuFileName}"; // set route to Otsu processed file
-          #endregion OTSU processing */
 
           // Save as PNG in wwwroot/images
           await imageSharp.SaveAsPngAsync(outputFilePath);
@@ -182,6 +182,7 @@ namespace MedicalImageAnalysis.Web.Pages
       return Page();
     }
 
+    # region OTSU Thresholding
     // Separate OnPostApplyOtsuAsync handler (more interactive, needs image caching)
     public async Task<IActionResult> OnPostApplyOtsuAsync()
     {
@@ -202,7 +203,7 @@ namespace MedicalImageAnalysis.Web.Pages
             var row = accessor.GetRowSpan(y);
             for (int x = 0; x < width; x++)
             {
-              grayscalePixels[y*width + x] = row[x].PackedValue; // Get the pixel value
+              grayscalePixels[y * width + x] = row[x].PackedValue; // Get the pixel value
             }
           }
         });
@@ -220,47 +221,8 @@ namespace MedicalImageAnalysis.Web.Pages
 
       return Page();
     }
-    
-    // Handler for applying K-means clustering
-    public async Task<IActionResult> OnPostApplyKMeansAsync()
-    {
-      if (!string.IsNullOrEmpty(DisplayImageUrl) && KMeans_K > 1)
-      {
-        var imagePath = Path.Combine("wwwroot", DisplayImageUrl.TrimStart('/'));
-        using var originalImage = await Image.LoadAsync<L8>(imagePath);
-        var width = originalImage.Width;
-        var height = originalImage.Height;
 
-        // Extract pixel data from the image
-        var grayscalePixels = new byte[width * height];
-        originalImage.ProcessPixelRows(accessor =>
-        {
-          for (int y = 0; y < height; y++)
-          {
-            var row = accessor.GetRowSpan(y);
-            for (int x = 0; x < width; x++)
-            {
-              grayscalePixels[y * width + x] = row[x].PackedValue;
-            }
-          }
-        });
-
-        // Apply K-means clustering
-        var labels = _kMeansService.ApplyKMeans(grayscalePixels, width, height, KMeans_K);
-        
-        // Create a colorized image based on cluster labels
-        using var clusteredImage = CreateColorizedClusteredImage(labels, width, height, KMeans_K);
-        
-        // Save clustered result
-        var kmeansFileName = Guid.NewGuid() + "_kmeans.png";
-        var kmeansPath = Path.Combine("wwwroot", "images", kmeansFileName);
-        await clusteredImage.SaveAsPngAsync(kmeansPath);
-        KMeansImageUrl = $"/images/{kmeansFileName}";
-      }
-      
-      return Page();
-    }
-
+    // helper for appying OTSU
     private Image<Rgba32> ApplyOtsuThresholding(byte[] grayscalePixels, int width, int height, byte threshold)
     {
       // Create binary image
@@ -272,83 +234,16 @@ namespace MedicalImageAnalysis.Web.Pages
           var row = accessor.GetRowSpan(y);
           for (int x = 0; x < width; x++)
           {
-            byte gray = grayscalePixels[y*width + x];
+            byte gray = grayscalePixels[y * width + x];
             byte binary = gray >= threshold ? (byte)255 : (byte)0;
             row[x] = new Rgba32(binary, binary, binary, 255);
           }
         }
       });
-      
+
       return binaryImage;
     }
-    
-    /// <summary>
-    /// Creates a colorized image based on cluster labels.
-    /// </summary>
-    private Image<Rgba32> CreateColorizedClusteredImage(int[] labels, int width, int height, int k)
-    {
-      var image = new Image<Rgba32>(width, height);
-      
-      // Define distinct colors for each cluster
-      var colors = GenerateDistinctColors(k);
-      
-      image.ProcessPixelRows(accessor =>
-      {
-        for (int y = 0; y < height; y++)
-        {
-          var row = accessor.GetRowSpan(y);
-          for (int x = 0; x < width; x++)
-          {
-            int index = y * width + x;
-            row[x] = colors[labels[index]];
-          }
-        }
-      });
-      
-      return image;
-    }
-    
-    /// <summary>
-    /// Generates distinct colors for cluster visualization.
-    /// </summary>
-    private Rgba32[] GenerateDistinctColors(int count)
-    {
-      var colors = new Rgba32[count];
-      
-      // Predefined set of distinct colors
-      var predefinedColors = new[]
-      {
-        new Rgba32(255, 0, 0),    // Red
-        new Rgba32(0, 255, 0),    // Green
-        new Rgba32(0, 0, 255),    // Blue
-        new Rgba32(255, 255, 0),  // Yellow
-        new Rgba32(255, 0, 255),  // Magenta
-        new Rgba32(0, 255, 255),  // Cyan
-        new Rgba32(255, 128, 0),  // Orange
-        new Rgba32(128, 0, 255),  // Purple
-      };
-      
-      for (int i = 0; i < count; i++)
-      {
-        if (i < predefinedColors.Length)
-        {
-          colors[i] = predefinedColors[i];
-        }
-        else
-        {
-          // Generate random color if we run out of predefined ones
-          var random = new Random(42 + i); // Use a fixed seed for consistency
-          colors[i] = new Rgba32(
-            (byte)random.Next(256),
-            (byte)random.Next(256),
-            (byte)random.Next(256)
-          );
-        }
-      }
-      
-      return colors;
-    }
-
+    // helper for computing OTSU threshold
     private byte ComputeOtsuThreshold(byte[] grayscalePixels)
     {
       const int L = 256; // byte is 0 to 255
@@ -390,6 +285,158 @@ namespace MedicalImageAnalysis.Web.Pages
       }
 
       return threshold;
+    }
+    #endregion
+
+    #region KMeans Clustering
+    // Handler for applying K-means clustering
+    public async Task<IActionResult> OnPostApplyKMeansAsync()
+    {
+      if (!string.IsNullOrEmpty(DisplayImageUrl) && KMeans_K > 1)
+      {
+        var imagePath = Path.Combine("wwwroot", DisplayImageUrl.TrimStart('/'));
+        using var originalImage = await Image.LoadAsync<L8>(imagePath);
+        var width = originalImage.Width;
+        var height = originalImage.Height;
+
+        // Extract pixel data from the image
+        var grayscalePixels = new byte[width * height];
+        originalImage.ProcessPixelRows(accessor =>
+        {
+          for (int y = 0; y < height; y++)
+          {
+            var row = accessor.GetRowSpan(y);
+            for (int x = 0; x < width; x++)
+            {
+              grayscalePixels[y * width + x] = row[x].PackedValue;
+            }
+          }
+        });
+
+        // Apply K-means clustering
+        var labels = _kMeansService.ApplyKMeans(grayscalePixels, width, height, KMeans_K);
+
+        // Create a colorized image based on cluster labels
+        using var clusteredImage = CreateColorizedClusteredImage(labels, width, height, KMeans_K);
+
+        // Save clustered result
+        var kmeansFileName = Guid.NewGuid() + "_kmeans.png";
+        var kmeansPath = Path.Combine("wwwroot", "images", kmeansFileName);
+        await clusteredImage.SaveAsPngAsync(kmeansPath);
+        KMeansImageUrl = $"/images/{kmeansFileName}";
+      }
+
+      return Page();
+    }
+      
+    /// <summary>
+    /// Creates a colorized image based on cluster labels.
+    /// </summary>
+    private Image<Rgba32> CreateColorizedClusteredImage(int[] labels, int width, int height, int k)
+    {
+      var image = new Image<Rgba32>(width, height);
+      
+      // Define distinct colors for each cluster
+      var colors = GenerateDistinctColors(k);
+      
+      image.ProcessPixelRows(accessor =>
+      {
+        for (int y = 0; y < height; y++)
+        {
+          var row = accessor.GetRowSpan(y);
+          for (int x = 0; x < width; x++)
+          {
+            int index = y * width + x;
+            row[x] = colors[labels[index]];
+          }
+        }
+      });
+      
+      return image;
+    }
+
+    /// <summary>
+    /// Generates distinct colors for cluster visualization.
+    /// </summary>
+    private Rgba32[] GenerateDistinctColors(int count)
+    {
+      var colors = new Rgba32[count];
+
+      // Predefined set of distinct colors
+      var predefinedColors = new[]
+      {
+        new Rgba32(255, 0, 0),    // Red
+        new Rgba32(0, 255, 0),    // Green
+        new Rgba32(0, 0, 255),    // Blue
+        new Rgba32(255, 255, 0),  // Yellow
+        new Rgba32(255, 0, 255),  // Magenta
+        new Rgba32(0, 255, 255),  // Cyan
+        new Rgba32(255, 128, 0),  // Orange
+        new Rgba32(128, 0, 255),  // Purple
+      };
+
+      for (int i = 0; i < count; i++)
+      {
+        if (i < predefinedColors.Length) // pick from predefined colors
+        { 
+          colors[i] = predefinedColors[i];
+        }
+        else // Generate random color if run out of predefined ones
+        { 
+          var random = new Random(42 + i); // Use a fixed seed for consistency
+          colors[i] = new Rgba32(
+            (byte)random.Next(256),
+            (byte)random.Next(256),
+            (byte)random.Next(256)
+          );
+        }
+      }
+
+      return colors;
+    }
+    #endregion
+    
+    // Handler for applying PCA preprocessing
+    public async Task<IActionResult> OnPostApplyPCAAsync()
+    {
+      if (!string.IsNullOrEmpty(DisplayImageUrl) && PCAComponents > 0)
+      {
+        var imagePath = Path.Combine("wwwroot", DisplayImageUrl.TrimStart('/'));
+        using var originalImage = await Image.LoadAsync<L8>(imagePath);
+        var width = originalImage.Width;
+        var height = originalImage.Height;
+
+        // Extract pixel data from the image
+        var grayscalePixels = new byte[width * height];
+        originalImage.ProcessPixelRows(accessor =>
+        {
+          for (int y = 0; y < height; y++)
+          {
+            var row = accessor.GetRowSpan(y);
+            for (int x = 0; x < width; x++)
+            {
+              grayscalePixels[y * width + x] = row[x].PackedValue;
+            }
+          }
+        });
+
+        // Apply PCA preprocessing
+        var pcaPixels = _pcaService.ApplyPCA(grayscalePixels, width, height, PCAComponents);
+        
+        // Compute explained variance ratios
+        ExplainedVarianceRatios = _pcaService.ComputeExplainedVarianceRatio(grayscalePixels, width, height);
+        
+        // Create image from PCA processed pixels
+        using var pcaProcessedImage = Image.LoadPixelData<L8>(pcaPixels, width, height);
+        
+        // Save PCA result
+        var pcaFileName = Guid.NewGuid() + "_pca.png";
+        var pcaPath = Path.Combine("wwwroot", "images", pcaFileName);
+        await pcaProcessedImage.SaveAsPngAsync(pcaPath);
+        PCAImageUrl = $"/images/{pcaFileName}";
+      }
+      
+      return Page();
     }
         
   }

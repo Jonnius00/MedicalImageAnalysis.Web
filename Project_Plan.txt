@@ -57,6 +57,28 @@
   Display “PCA-reconstructed” version.
   ✅ Outcome: Transformed data + explained variance. User sees how PCA simplifies the image.
 
+  Current State Analysis of PCA implementation:
+  - successfully implemented basic PCA preprocessing functionality;
+  - added support for detecting multi-frame DICOM files;
+  - have a proper service architecture with dependency injection;
+  - displaying basic metadata including the number of frames;
+  - doesn't utilize the multiple frames for analysis - treating each image independently.
+
+  UNDER CONSIDERATION. Next logical Step for Multi-Frame PCA Processing:
+  1. Extract All Frames from Multi-Frame DICOM Files.  
+    Currently, only rendering the first frame of multi-frame DICOM files. 
+  2. Store all frames as separate images or pixel arrays.
+  3. Pass this collection to the PCA service.
+  4. Enhance PCA Service for Multi-Image Analysis:
+    - Implement the full PCA algorithm that works on multiple images;
+    - Compute covariance matrix across all frames;
+    - Calculate true eigenvalues/eigenvectors from the multi-image dataset;
+    - Reconstruct images using principal components
+  5. Update UI to Handle Multi-Frame Results:
+    - Display information about how many frames were used in PCA;
+    - Show reconstructed images from different numbers of components;
+    - Visualize the explained variance ratios with actual computed values;
+
   E. Segmentation Algorithms. Add Region Growing.
   Hardcode seed = image center
   Use queue-based flood fill

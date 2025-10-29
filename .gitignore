@@ -60,13 +60,16 @@ obj/
 # Logs
 *.log
 
+# AI chat agents
+.continue/
+.lingma/
+
 # Others
 TestResults/
-.continue/
 *.pid
 *.pid.lock
 *.lock
 *.pdb
 *.sqlite
 *.sqlite3
-# wwwroot/images/
+wwwroot/images/

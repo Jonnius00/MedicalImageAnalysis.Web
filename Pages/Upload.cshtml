@@ -17,18 +17,38 @@
   <h3>Preview:</h3>
   <img src="@Model.DisplayImageUrl" style="max-width: 800px; border: 1px solid #ccc;" />
   
+  @if (Model.NumberOfFrames > 1)
+  {
+    <div style="margin-top: 10px; padding: 10px; background: #e7f3ff; border-radius: 4px;">
+      <strong>Multi-frame DICOM detected:</strong> @Model.NumberOfFrames frames available for PCA analysis
+    </div>
+  }
+  
   <div style="margin-top: 10px;">
     <form method="post" asp-page-handler="ApplyOtsu" style="display: inline-block; margin-right: 10px;">
         <input type="hidden" asp-for="DisplayImageUrl" />
         <input type="hidden" asp-for="KMeans_K" />
+        <input type="hidden" asp-for="PCAComponents" />
+        <input type="hidden" asp-for="NumberOfFrames" />
         <button type="submit">Apply Otsu Thresholding</button>
     </form>
     
-    <form method="post" asp-page-handler="ApplyKMeans" style="display: inline-block;">
+    <form method="post" asp-page-handler="ApplyKMeans" style="display: inline-block; margin-right: 10px;">
         <input type="hidden" asp-for="DisplayImageUrl" />
+        <input type="hidden" asp-for="PCAComponents" />
+        <input type="hidden" asp-for="NumberOfFrames" />
         <label for="KMeans_K">Clusters (K):</label>
         <input asp-for="KMeans_K" type="number" min="2" max="10" style="width: 60px;" />
         <button type="submit">Apply K-means</button>
+    </form>
+    
+    <form method="post" asp-page-handler="ApplyPCA" style="display: inline-block;">
+        <input type="hidden" asp-for="DisplayImageUrl" />
+        <input type="hidden" asp-for="KMeans_K" />
+        <input type="hidden" asp-for="NumberOfFrames" />
+        <label for="PCAComponents">PCA Components:</label>
+        <input asp-for="PCAComponents" type="number" min="1" max="10" style="width: 60px;" />
+        <button type="submit">Apply PCA</button>
     </form>
   </div>
 }
@@ -45,11 +65,38 @@
     <img src="@Model.KMeansImageUrl" style="max-width: 800px; border: 1px solid #ccc;" />
 }
 
+@if (Model.PCAImageUrl != null)
+{
+    <h3>PCA Result (@Model.PCAComponents components):</h3>
+    <img src="@Model.PCAImageUrl" style="max-width: 800px; border: 1px solid #ccc;" />
+    
+    @if (Model.ExplainedVarianceRatios != null && Model.ExplainedVarianceRatios.Length > 0)
+    {
+        <div style="margin-top: 10px; padding: 10px; background: #f5f5f5; border-radius: 4px;">
+            <h4>Explained Variance Ratios:</h4>
+            <ul>
+                @for (int i = 0; i < Math.Min(Model.PCAComponents, Model.ExplainedVarianceRatios.Length); i++)
+                {
+                    <li>Component @(i+1): @((Model.ExplainedVarianceRatios[i] * 100).ToString("F2"))%</li>
+                }
+            </ul>
+            @{
+                var totalVariance = Model.ExplainedVarianceRatios.Take(Model.PCAComponents).Sum() * 100;
+            }
+            <p><strong>Total explained variance: @totalVariance.ToString("F2")%</strong></p>
+        </div>
+    }
+}
+
 @if (Model.Modality != null)
 {
   <div style="margin-top: 20px; padding: 10px; background: #f5f5f5; border-radius: 4px;">
       <h4>DICOM Metadata</h4>
       <p><strong>Patient:</strong> @Model.PatientName</p>
       <p><strong>Modality:</strong> @Model.Modality</p>
+      @if (Model.NumberOfFrames > 1)
+      {
+        <p><strong>Frames:</strong> @Model.NumberOfFrames</p>
+      }
   </div>
 }
