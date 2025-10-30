@@ -59,13 +59,31 @@ namespace MedicalImageAnalysis.Web.Pages
     private readonly ILogger<UploadModel> _logger;
     private readonly KMeansService _kMeansService;      // K-means service instance
     private readonly PCAPreprocessingService _pcaService; // PCA preprocessing service instance
-    private readonly string _baseFileName;
+    // Removed [BindProperty] attribute as we'll compute this dynamically
+    private string _baseFileName => GetBaseFileName();
+    
     public UploadModel(ILogger<UploadModel> logger, KMeansService kMeansService, PCAPreprocessingService pcaService)
     {
       _logger = logger;
       _kMeansService = kMeansService;
       _pcaService = pcaService;
-      _baseFileName = Guid.NewGuid().ToString();
+    }
+    
+    /// <summary>
+    /// Extracts the base filename (GUID) from DisplayImageUrl
+    /// </summary>
+    private string GetBaseFileName()
+    {
+        if (!string.IsNullOrEmpty(DisplayImageUrl))
+        {
+            // Extract the filename part from the URL
+            var fileName = Path.GetFileName(DisplayImageUrl);
+            // Remove the extension to get the base name
+            return Path.GetFileNameWithoutExtension(fileName);
+        }
+        
+        // Return a new GUID if DisplayImageUrl is not set
+        return Guid.NewGuid().ToString();
     }
 
     public void OnGet() { }
@@ -213,7 +231,8 @@ namespace MedicalImageAnalysis.Web.Pages
         using var binaryImage = ApplyOtsuThresholding(grayscalePixels, width, height, otsuThreshold);
 
         // Save binary result
-        var otsuFileName = Guid.NewGuid() + "_otsu.png";
+        // var otsuFileName = Guid.NewGuid() + "_otsu.png";
+        var otsuFileName = _baseFileName + "_otsu.png";
         var otsuPath = Path.Combine("wwwroot", "images", otsuFileName);
         await binaryImage.SaveAsPngAsync(otsuPath);
         OtsuImageUrl = $"/images/{otsuFileName}";
@@ -320,7 +339,7 @@ namespace MedicalImageAnalysis.Web.Pages
         using var clusteredImage = CreateColorizedClusteredImage(labels, width, height, KMeans_K);
 
         // Save clustered result
-        var kmeansFileName = Guid.NewGuid() + "_kmeans.png";
+        var kmeansFileName = _baseFileName + "_kmeans.png";
         var kmeansPath = Path.Combine("wwwroot", "images", kmeansFileName);
         await clusteredImage.SaveAsPngAsync(kmeansPath);
         KMeansImageUrl = $"/images/{kmeansFileName}";
@@ -430,7 +449,7 @@ namespace MedicalImageAnalysis.Web.Pages
         using var pcaProcessedImage = Image.LoadPixelData<L8>(pcaPixels, width, height);
         
         // Save PCA result
-        var pcaFileName = Guid.NewGuid() + "_pca.png";
+        var pcaFileName = _baseFileName + "_pca.png";
         var pcaPath = Path.Combine("wwwroot", "images", pcaFileName);
         await pcaProcessedImage.SaveAsPngAsync(pcaPath);
         PCAImageUrl = $"/images/{pcaFileName}";
