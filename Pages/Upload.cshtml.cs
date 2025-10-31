@@ -44,6 +44,8 @@ namespace MedicalImageAnalysis.Web.Pages
     
     public string? PCAImageUrl { get; private set; } // For PCA preprocessed image
     
+    public string? RegionGrowingImageUrl { get; private set; } // For region growing segmented image
+    
     public double[]? ExplainedVarianceRatios { get; private set; } // For PCA explained variance ratios
     
     [BindProperty]
@@ -52,6 +54,9 @@ namespace MedicalImageAnalysis.Web.Pages
     [BindProperty]
     public int PCAComponents { get; set; } = 2; // Number of PCA components, default to 2
     
+    [BindProperty]
+    public int RegionGrowingTolerance { get; set; } = 10; // Intensity difference threshold for region growing, default to 10
+    
     public string? Modality { get; private set; } 
     public string? PatientName { get; private set; }
     public int NumberOfFrames { get; private set; } = 1; // Number of frames in DICOM file
@@ -59,14 +64,16 @@ namespace MedicalImageAnalysis.Web.Pages
     private readonly ILogger<UploadModel> _logger;
     private readonly KMeansService _kMeansService;      // K-means service instance
     private readonly PCAPreprocessingService _pcaService; // PCA preprocessing service instance
+    private readonly RegionGrowingService _regionGrowingService; // Region growing service instance
     // Removed [BindProperty] attribute as we'll compute this dynamically
     private string _baseFileName => GetBaseFileName();
     
-    public UploadModel(ILogger<UploadModel> logger, KMeansService kMeansService, PCAPreprocessingService pcaService)
+    public UploadModel(ILogger<UploadModel> logger, KMeansService kMeansService, PCAPreprocessingService pcaService, RegionGrowingService regionGrowingService)
     {
       _logger = logger;
       _kMeansService = kMeansService;
       _pcaService = pcaService;
+      _regionGrowingService = regionGrowingService;
     }
     
     /// <summary>
@@ -456,6 +463,73 @@ namespace MedicalImageAnalysis.Web.Pages
       }
       
       return Page();
+    }
+    
+    // Handler for applying region growing segmentation
+    public async Task<IActionResult> OnPostApplyRegionGrowingAsync()
+    {
+      if (!string.IsNullOrEmpty(DisplayImageUrl) && RegionGrowingTolerance >= 0)
+      {
+        var imagePath = Path.Combine("wwwroot", DisplayImageUrl.TrimStart('/'));
+        using var originalImage = await Image.LoadAsync<L8>(imagePath);
+        var width = originalImage.Width;
+        var height = originalImage.Height;
+
+        // Extract pixel data from the image
+        var grayscalePixels = new byte[width * height];
+        originalImage.ProcessPixelRows(accessor =>
+        {
+          for (int y = 0; y < height; y++)
+          {
+            var row = accessor.GetRowSpan(y);
+            for (int x = 0; x < width; x++)
+            {
+              grayscalePixels[y * width + x] = row[x].PackedValue;
+            }
+          }
+        });
+
+        // Define seed point at image center
+        var seedPoint = new System.Drawing.Point(width / 2, height / 2);
+
+        // Apply region growing segmentation
+        var regionMask = _regionGrowingService.ApplyRegionGrowing(grayscalePixels, width, height, seedPoint, RegionGrowingTolerance);
+
+        // Create segmented image based on region mask
+        using var segmentedImage = CreateBinarySegmentedImage(regionMask, width, height);
+
+        // Save region growing result
+        var regionGrowingFileName = _baseFileName + "_regiongrowing.png";
+        var regionGrowingPath = Path.Combine("wwwroot", "images", regionGrowingFileName);
+        await segmentedImage.SaveAsPngAsync(regionGrowingPath);
+        RegionGrowingImageUrl = $"/images/{regionGrowingFileName}";
+      }
+
+      return Page();
+    }
+    
+    /// <summary>
+    /// Creates a binary image based on region mask.
+    /// </summary>
+    private Image<L8> CreateBinarySegmentedImage(byte[] regionMask, int width, int height)
+    {
+      var image = new Image<L8>(width, height);
+      
+      image.ProcessPixelRows(accessor =>
+      {
+        for (int y = 0; y < height; y++)
+        {
+          var row = accessor.GetRowSpan(y);
+          for (int x = 0; x < width; x++)
+          {
+            int index = y * width + x;
+            // Set pixel to white if in region, black otherwise
+            row[x] = new L8(regionMask[index] > 0 ? (byte)255 : (byte)0);
+          }
+        }
+      });
+      
+      return image;
     }
         
   }

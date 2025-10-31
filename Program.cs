@@ -6,6 +6,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorPages();
 builder.Services.AddSingleton<KMeansService>();
 builder.Services.AddSingleton<PCAPreprocessingService>();
+builder.Services.AddSingleton<RegionGrowingService>();
 
 var app = builder.Build();
 

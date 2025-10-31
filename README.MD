@@ -85,8 +85,10 @@ MedicalImageAnalysis.Web/
     
 - ✅ PCA preprocessing. DONE
   implemented basic PCA preprocessing functionality.
+  Needed to be reweived according to Project_Plan.txt
 
-- [ ] Segmentation algorithms ( region growing)
+- ✅ Segmentation algorithms ( region growing)
+
 - [ ] Segmentation algorithms ( watershed )
 - [ ] Interactive visualization ( Canvas/SVG overlays )
 - [ ] Pipeline configuration UI
