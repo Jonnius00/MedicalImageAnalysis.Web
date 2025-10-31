@@ -7,6 +7,7 @@ builder.Services.AddRazorPages();
 builder.Services.AddSingleton<KMeansService>();
 builder.Services.AddSingleton<PCAPreprocessingService>();
 builder.Services.AddSingleton<RegionGrowingService>();
+builder.Services.AddSingleton<WatershedService>();
 
 var app = builder.Build();
 

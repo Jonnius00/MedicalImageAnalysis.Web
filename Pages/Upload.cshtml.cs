@@ -48,6 +48,8 @@ namespace MedicalImageAnalysis.Web.Pages
     
     public double[]? ExplainedVarianceRatios { get; private set; } // For PCA explained variance ratios
     
+    public string? WatershedImageUrl { get; private set; } // For watershed segmented image
+    
     [BindProperty]
     public int KMeans_K { get; set; } = 3;      // Number of clusters for K-means, default to 3
     
@@ -65,15 +67,17 @@ namespace MedicalImageAnalysis.Web.Pages
     private readonly KMeansService _kMeansService;      // K-means service instance
     private readonly PCAPreprocessingService _pcaService; // PCA preprocessing service instance
     private readonly RegionGrowingService _regionGrowingService; // Region growing service instance
+    private readonly WatershedService _watershedService; // Watershed service instance
     // Removed [BindProperty] attribute as we'll compute this dynamically
     private string _baseFileName => GetBaseFileName();
     
-    public UploadModel(ILogger<UploadModel> logger, KMeansService kMeansService, PCAPreprocessingService pcaService, RegionGrowingService regionGrowingService)
+    public UploadModel(ILogger<UploadModel> logger, KMeansService kMeansService, PCAPreprocessingService pcaService, RegionGrowingService regionGrowingService, WatershedService watershedService)
     {
       _logger = logger;
       _kMeansService = kMeansService;
       _pcaService = pcaService;
       _regionGrowingService = regionGrowingService;
+      _watershedService = watershedService;
     }
     
     /// <summary>
@@ -531,6 +535,112 @@ namespace MedicalImageAnalysis.Web.Pages
       
       return image;
     }
-        
+    
+    #region Watershed Segmentation
+    // Handler for applying watershed segmentation
+    public async Task<IActionResult> OnPostApplyWatershedAsync()
+    {
+      if (!string.IsNullOrEmpty(DisplayImageUrl))
+      {
+        var imagePath = Path.Combine("wwwroot", DisplayImageUrl.TrimStart('/'));
+        using var originalImage = await Image.LoadAsync<L8>(imagePath);
+        var width = originalImage.Width;
+        var height = originalImage.Height;
+
+        // Extract pixel data from the image
+        var grayscalePixels = new byte[width * height];
+        originalImage.ProcessPixelRows(accessor =>
+        {
+          for (int y = 0; y < height; y++)
+          {
+            var row = accessor.GetRowSpan(y);
+            for (int x = 0; x < width; x++)
+            {
+              grayscalePixels[y * width + x] = row[x].PackedValue;
+            }
+          }
+        });
+
+        // Apply watershed segmentation
+        var labels = _watershedService.ApplyWatershed(grayscalePixels, width, height);
+
+        // Create a colorized image based on watershed labels
+        using var watershedImage = CreateColorizedWatershedImage(labels, width, height);
+
+        // Save watershed result
+        var watershedFileName = _baseFileName + "_watershed.png";
+        var watershedPath = Path.Combine("wwwroot", "images", watershedFileName);
+        await watershedImage.SaveAsPngAsync(watershedPath);
+        WatershedImageUrl = $"/images/{watershedFileName}";
+      }
+
+      return Page();
+    }
+    
+    /// <summary>
+    /// Creates a colorized image based on watershed labels.
+    /// </summary>
+    private Image<Rgba32> CreateColorizedWatershedImage(int[] labels, int width, int height)
+    {
+      // Find the number of unique labels
+      var uniqueLabels = labels.Distinct().OrderBy(x => x).ToArray();
+      int maxLabel = uniqueLabels.Length > 0 ? uniqueLabels.Max() : 0;
+      
+      // Create color map for labels
+      var random = new Random(42); // Fixed seed for reproducibility
+      var colorMap = new Dictionary<int, Rgba32>();
+      
+      // Assign colors to labels
+      foreach (int label in uniqueLabels)
+      {
+        if (label == 0)
+        {
+          // Background - black
+          colorMap[label] = new Rgba32(0, 0, 0);
+        }
+        else if (label == -1)
+        {
+          // Watershed lines - red
+          colorMap[label] = new Rgba32(255, 0, 0);
+        }
+        else
+        {
+          // Generate random color for other regions
+          byte r = (byte)random.Next(0, 256);
+          byte g = (byte)random.Next(0, 256);
+          byte b = (byte)random.Next(0, 256);
+          colorMap[label] = new Rgba32(r, g, b);
+        }
+      }
+
+      // Create colorized image
+      var colorizedImage = new Image<Rgba32>(width, height);
+      colorizedImage.ProcessPixelRows(accessor =>
+      {
+        for (int y = 0; y < height; y++)
+        {
+          var row = accessor.GetRowSpan(y);
+          for (int x = 0; x < width; x++)
+          {
+            int index = y * width + x;
+            int label = labels[index];
+            
+            if (colorMap.ContainsKey(label))
+            {
+              row[x] = colorMap[label];
+            }
+            else
+            {
+              // Default to white if label not found
+              row[x] = new Rgba32(255, 255, 255);
+            }
+          }
+        }
+      });
+
+      return colorizedImage;
+    }
+    #endregion
+
   }
 }

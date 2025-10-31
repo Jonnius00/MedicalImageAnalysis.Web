@@ -60,6 +60,14 @@
         <input asp-for="RegionGrowingTolerance" type="number" min="0" max="255" style="width: 60px;" />
         <button type="submit">Apply Region Growing</button>
     </form>
+    
+    <form method="post" asp-page-handler="ApplyWatershed" style="display: inline-block;">
+        <input type="hidden" asp-for="DisplayImageUrl" />
+        <input type="hidden" asp-for="KMeans_K" />
+        <input type="hidden" asp-for="PCAComponents" />
+        <input type="hidden" asp-for="NumberOfFrames" />
+        <button type="submit">Apply Watershed</button>
+    </form>
   </div>
 }
 
@@ -102,6 +110,12 @@
 {
     <h3>Region Growing Result (Tolerance=@Model.RegionGrowingTolerance):</h3>
     <img src="@Model.RegionGrowingImageUrl" style="max-width: 800px; border: 1px solid #ccc;" />
+}
+
+@if (Model.WatershedImageUrl != null)
+{
+    <h3>Watershed Result:</h3>
+    <img src="@Model.WatershedImageUrl" style="max-width: 800px; border: 1px solid #ccc;" />
 }
 
 @if (Model.Modality != null)
