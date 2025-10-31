@@ -26,11 +26,13 @@
 2. Core Functional Modules.
   Implement these as services or stateless functions:
 
-  A. Data Loading
+  A. Data Loading (partly done)
   Support common medical formats: DICOM via fo-dicom, 
   and standard images (PNG/JPG).
   NIfTI via custom or NIfTI.NET ( NIfTI support skipped for now). 
   Load into a unified internal representation (e.g., float[,,] for 3D volumes or Bitmap for 2D slices).
+
+  UNDER CONSIDERATION: upload multiple PNG/JPG images. 
   ✅ Outcome: Reliable image preview on Windows (no crashes).
 
   B. Segmentation Algorithms. Add Otsu Thresholding
@@ -57,40 +59,51 @@
   Display “PCA-reconstructed” version.
   ✅ Outcome: Transformed data + explained variance. User sees how PCA simplifies the image.
 
-  Current State Analysis of PCA implementation:
-  - successfully implemented basic PCA preprocessing functionality;
-  - added support for detecting multi-frame DICOM files;
+  Current State of PCA preprocessing implementation:
   - have a proper service architecture with dependency injection;
+  - successfully implemented basic PCA preprocessing functionality;
+  - detect and display the number of frames in a DICOM file.
+    PCA service now has two implementations:
+    - for multiple images, which performs real PCA with proper mathematical foundation,
+    - for single images (simplified version demonstrates the concept without doing full PCA).
   - displaying basic metadata including the number of frames;
-  - doesn't utilize the multiple frames for analysis - treating each image independently.
+  - shows appropriate explained variance ratios in both cases
+  
+  UNDER CONSIDERATION:
+  1. Multi-Frame PCA Processing.
+  current PCA implementation doesn't actually utilize the multiple frames for analysis, it's still treating each image independently. 
+    1. Extract All Frames from Multi-Frame DICOM Files.
+    Currently, the app is only rendering the first frame of multi-frame DICOM files. It needs to:
+      Modify the DICOM processing code to extract all frames. 
+      Store all frames as separate images or pixel arrays. 
+      Pass this collection to the PCA service. 
 
-  UNDER CONSIDERATION. Next logical Step for Multi-Frame PCA Processing:
-  1. Extract All Frames from Multi-Frame DICOM Files.  
-    Currently, only rendering the first frame of multi-frame DICOM files. 
-  2. Store all frames as separate images or pixel arrays.
-  3. Pass this collection to the PCA service.
-  4. Enhance PCA Service for Multi-Image Analysis:
-    - Implement the full PCA algorithm that works on multiple images;
-    - Compute covariance matrix across all frames;
-    - Calculate true eigenvalues/eigenvectors from the multi-image dataset;
-    - Reconstruct images using principal components
-  5. Update UI to Handle Multi-Frame Results:
-    - Display information about how many frames were used in PCA;
-    - Show reconstructed images from different numbers of components;
-    - Visualize the explained variance ratios with actual computed values;
+    2. Enhance PCA Service for Multi-Image Analysis.
+      Implement the full PCA algorithm that works on multiple images.
+      Compute covariance matrix across all frames.
+      Calculate true eigenvalues/eigenvectors from the multi-image dataset.
+      Reconstruct images using principal components. 
+
+    3. Update UI to Handle Multi-Frame Results.
+      Display information about how many frames were used in PCA.
+      Show reconstructed images from different numbers of components.
+      Visualize the explained variance ratios with actual computed values.
+
+  2. Implement PCA on image patches for single image.
+     Compute Explained Variance Ratio for single image.
 
   E. Segmentation Algorithms. Add Region Growing.
-  Hardcode seed = image center
-  Use queue-based flood fill
-  Compare neighbor intensity to seed ± tolerance
-  Output: binary mask of grown region
+  Hardcode seed = image center. 
+  Use queue-based flood fill. 
+  Compare neighbor intensity to seed ± tolerance. 
+  Output: binary mask of grown region. 
   ✅ Outcome: Interactive-seeming segmentation (even if seed is fixed).
 
   F. Segmentation Algorithms. Add Watershed.
-  Use binary image from Otsu as input
-  Compute distance transform (ImageSharp doesn’t have it → use simple approximation)
-  Find local maxima as markers
-  Simulate watershed with morphological flooding
+  Use binary image from Otsu as input. 
+  Compute distance transform (ImageSharp doesn’t have it → use simple approximation). 
+  Find local maxima as markers. 
+  Simulate watershed with morphological flooding. 
   Alternatively: Skip full watershed and show distance map as proxy. 
   ✅ Outcome: “Watershed-like” segmentation for demo.
 
