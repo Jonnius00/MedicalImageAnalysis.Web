@@ -4,22 +4,22 @@ using Dicom;
 using Dicom.Imaging;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
-using Microsoft.Extensions.Logging;
+// using Microsoft.Extensions.Logging;
 using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.PixelFormats; //  Added for ImageSharp
 // using SixLabors.ImageSharp.Processing;
 using MedicalImageAnalysis.Web.Services; // Added for KMeansService
 
 /// <summary>
 /// 
-/// Current Implementation (Upload.cshtml.cs)
-/// Uses fo-dicom 5.x and fo-dicom.Drawing for DICOM handling.
+/// Current Implementation uses fo-dicom 5.x and fo-dicom.Drawing for DICOM handling.
 /// 
 /// For DICOM files:
 /// Saves the uploaded file to a temp path.
 /// Opens the file with DicomFile.Open.
 /// Extracts metadata.
-/// Renders the image and converts it to a System.Drawing.Bitmap using AsClonedBitmap().
+/// Renders the image and
+/// NOT YET - converts it to a System.Drawing.Bitmap using AsClonedBitmap().
 /// Saves the bitmap directly as PNG.
 ///  
 /// For standard images (PNG/JPG):
@@ -69,10 +69,10 @@ namespace MedicalImageAnalysis.Web.Pages
     private readonly PCAPreprocessingService _pcaService; // PCA preprocessing service instance
     private readonly RegionGrowingService _regionGrowingService; // Region growing service instance
     private readonly WatershedService _watershedService; // Watershed service instance
-    // Removed [BindProperty] attribute as we'll compute this dynamically
-    private string _baseFileName => GetBaseFileName();
-    
-    public UploadModel(ILogger<UploadModel> logger, OtsuService otsuService , KMeansService kMeansService, PCAPreprocessingService pcaService, RegionGrowingService regionGrowingService, WatershedService watershedService)
+
+    private string _baseFileName => GetBaseFileName();   // shared GUID file name for cached images
+
+    public UploadModel(ILogger<UploadModel> logger, OtsuService otsuService, KMeansService kMeansService, PCAPreprocessingService pcaService, RegionGrowingService regionGrowingService, WatershedService watershedService)
     {
       _logger = logger;
       _otsuService = otsuService;
@@ -81,32 +81,81 @@ namespace MedicalImageAnalysis.Web.Pages
       _regionGrowingService = regionGrowingService;
       _watershedService = watershedService;
     }
+
+    #region Helper methods
     
     /// <summary>
-    /// Extracts the base filename (GUID) from DisplayImageUrl
+    /// Extracts pixel data from an image
+    /// </summary>
+    /// <param name="originalImage"></param>
+    /// <param name="width"></param>
+    /// <param name="height"></param>
+    /// <returns>Byte array of pixel data</returns>
+    private byte[] ExtractPixelDataFromImage(Image<L8> originalImage, int width, int height)
+    {
+      var pixels = new byte[width * height];
+      originalImage.ProcessPixelRows(accessor =>
+      {
+        for (int y = 0; y < height; y++)
+        {
+          var row = accessor.GetRowSpan(y);
+          for (int x = 0; x < width; x++)
+          { // Get the pixel value
+            pixels[y * width + x] = row[x].PackedValue; 
+          }
+        }
+      });
+      
+      return pixels;
+    }
+
+    /// <summary>
+    /// Helper extracts the base filename (GUID) from DisplayImageUrl
     /// </summary>
     private string GetBaseFileName()
     {
-        if (!string.IsNullOrEmpty(DisplayImageUrl))
-        {
-            // Extract the filename part from the URL
-            var fileName = Path.GetFileName(DisplayImageUrl);
-            // Remove the extension to get the base name
-            return Path.GetFileNameWithoutExtension(fileName);
-        }
-        
-        // Return a new GUID if DisplayImageUrl is not set
-        return Guid.NewGuid().ToString();
+      if (!string.IsNullOrEmpty(DisplayImageUrl))
+      {
+        // Extract the filename part from the URL
+        var fileName = Path.GetFileName(DisplayImageUrl);
+        // Remove the extension to get the base name
+        return Path.GetFileNameWithoutExtension(fileName);
+      }
+
+      // Return a new GUID if DisplayImageUrl is not set
+      return Guid.NewGuid().ToString();
     }
 
-    public void OnGet() { }
+    /// <summary>
+    /// Saves a processed image and returns the URL to access it
+    /// </summary>
+    /// <param name="image">The image to save</param>
+    /// <param name="fileName">output filename</param>
+    /// <param name="fileExtension">optional file extension (without dot)</param>
+    /// <returns>URL to the saved image</returns>
+    private async Task<string> SaveProcessedImageAsync(Image image, string fileName, string fileExtension = "png")
+    {
+      // var fileName = $"{fileName}.{fileExtension}";
+      var filePath = Path.Combine("wwwroot", "images", fileName);
+      
+      // Save as PNG (lossless format suitable for medical images)
+      await image.SaveAsPngAsync(filePath);
+      
+      return $"/images/{fileName}.{fileExtension}";
+    }
+
+    #endregion
+
+    // All Razor Page models should have an OnGet() method, even empty one
+    // serves all GET requests, entry point for initializing the page
+    public void OnGet() { } 
 
     public async Task<IActionResult> OnPostAsync()
     {
       if (UploadedFile == null || UploadedFile.Length == 0) return Page();
 
-      var uploadsFolder = Path.Combine("wwwroot", "images");
       // Creates (sub)directories in specified path unless they already exist.
+      var uploadsFolder = Path.Combine("wwwroot", "images");
       Directory.CreateDirectory(uploadsFolder);
 
       var originalFileName = UploadedFile.FileName;
@@ -143,20 +192,20 @@ namespace MedicalImageAnalysis.Web.Pages
           NumberOfFrames = dataset.GetSingleValueOrDefault(DicomTag.NumberOfFrames, 1);
           _logger.LogInformation("DICOM file has {NumberOfFrames} frames", NumberOfFrames);
 
-          // Extract metadata DEPRECATED, use .GetSequence(DicomTag.PatientName)
-          // PatientName = dataset.Get<string>(DicomTag.PatientName, "Anonymous");
-          // Modality = dataset.Get<string>(DicomTag.Modality, "Unknown");
+          /* // Extract metadata DEPRECATED way uses .GetSequence(DicomTag.PatientName)
+          PatientName = dataset.Get<string>(DicomTag.PatientName, "Anonymous");
+          Modality = dataset.Get<string>(DicomTag.Modality, "Unknown"); */
 
           var dicomImage = new DicomImage(dataset);
           var width = dicomImage.Width;
           var height = dicomImage.Height;
 
-          /* // using Windows System.Drawing.Bitmap
+          /* // using WINDOWS System.Drawing.Bitmap
           var rendered = dicomImage.RenderImage(); // Renders DICOM image to IImage.
           using var bitmap = rendered.AsClonedBitmap();
           bitmap.Save(outputFilePath, System.Drawing.Imaging.ImageFormat.Png); */
 
-          // Work with pixel data using ImageSharp, e.g DIRECT PIXEL ACCESS
+          // Works with pixel data using ImageSharp, e.g DIRECT PIXEL ACCESS
           var pixelData = dicomImage.RenderImage().Pixels; // Dicom.IO.PinnedIntArray
 
           if (pixelData.Data == null || pixelData.Data.Length == 0)
@@ -172,11 +221,11 @@ namespace MedicalImageAnalysis.Web.Pages
             grayscalePixels[i] = (byte)(((pixelData.Data[i] - min) * 255) / range);
           }
 
-          // Create ImageSharp image from pixel data
+          // Recreates SixLabors.ImageSharp.Image from the pixel data
           var imageSharp = Image.LoadPixelData<L8>(grayscalePixels, width, height);
 
           // Save as PNG in wwwroot/images
-          await imageSharp.SaveAsPngAsync(outputFilePath);
+          DisplayImageUrl = await SaveProcessedImageAsync(imageSharp, _baseFileName);
 
         } // Handle standard images (PNG/JPG)
         else if (fileExtension is ".png" or ".jpg" or ".jpeg")
@@ -184,6 +233,7 @@ namespace MedicalImageAnalysis.Web.Pages
           _logger.LogInformation("Uploading standard image: {FileName}", UploadedFile.FileName);
           await using var stream = new FileStream(outputFilePath, FileMode.Create);
           await UploadedFile.CopyToAsync(stream);
+          DisplayImageUrl = $"/images/{outputFileName}";
         }
         else // Unsupported file format
         {
@@ -191,7 +241,6 @@ namespace MedicalImageAnalysis.Web.Pages
           return Page();
         }
 
-        DisplayImageUrl = $"/images/{outputFileName}";
         _logger.LogInformation("Image saved successfully: {Path}", outputFilePath);
       }
       catch (DicomFileException ex)
@@ -213,31 +262,19 @@ namespace MedicalImageAnalysis.Web.Pages
       return Page();
     }
 
-    # region OTSU Thresholding
     // Separate OnPostApplyOtsuAsync handler
     public async Task<IActionResult> OnPostApplyOtsuAsync()
     {
       // Reload original image from DisplayImageUrl
-      if (!string.IsNullOrEmpty(DisplayImageUrl)) // DisplayImageUrl handling nullable
+      if (!string.IsNullOrEmpty(DisplayImageUrl))
       {
         var imagePath = Path.Combine("wwwroot", DisplayImageUrl.TrimStart('/'));
         using var originalImage = await Image.LoadAsync<L8>(imagePath);
         var width = originalImage.Width;
         var height = originalImage.Height;
 
-        // Extract pixel data from the image
-        var grayscalePixels = new byte[width * height];
-        originalImage.ProcessPixelRows(accessor =>
-        {
-          for (int y = 0; y < height; y++)
-          {
-            var row = accessor.GetRowSpan(y);
-            for (int x = 0; x < width; x++)
-            { // Get the pixel value
-              grayscalePixels[y * width + x] = row[x].PackedValue; 
-            }
-          }
-        });
+        // Extract byte[] of pixel data from the image
+        var grayscalePixels = ExtractPixelDataFromImage(originalImage, width, height);
 
         // Apply Otsu
         byte otsuThreshold = _otsuService.ComputeOtsuThreshold(grayscalePixels);
@@ -247,17 +284,11 @@ namespace MedicalImageAnalysis.Web.Pages
         using var binaryImage = Image.LoadPixelData<L8>(binaryPixels, width, height);
 
         // Save binary result
-        // var otsuFileName = Guid.NewGuid() + "_otsu.png";
-        var otsuFileName = _baseFileName + "_otsu.png";
-        var otsuPath = Path.Combine("wwwroot", "images", otsuFileName);
-        await binaryImage.SaveAsPngAsync(otsuPath);
-        OtsuImageUrl = $"/images/{otsuFileName}";
+        OtsuImageUrl = await SaveProcessedImageAsync(binaryImage, _baseFileName + "_otsu");
       }
 
       return Page();
     }
-
-     #endregion
 
     #region KMeans Clustering
     // Handler for applying K-means clustering
@@ -270,19 +301,8 @@ namespace MedicalImageAnalysis.Web.Pages
         var width = originalImage.Width;
         var height = originalImage.Height;
 
-        // Extract pixel data from the image
-        var grayscalePixels = new byte[width * height];
-        originalImage.ProcessPixelRows(accessor =>
-        {
-          for (int y = 0; y < height; y++)
-          {
-            var row = accessor.GetRowSpan(y);
-            for (int x = 0; x < width; x++)
-            {
-              grayscalePixels[y * width + x] = row[x].PackedValue;
-            }
-          }
-        });
+        // Extract byte[]pixel data from the image
+        var grayscalePixels = ExtractPixelDataFromImage(originalImage, width, height);
 
         // Apply K-means clustering
         var labels = _kMeansService.ApplyKMeans(grayscalePixels, width, height, KMeans_K);
@@ -291,10 +311,7 @@ namespace MedicalImageAnalysis.Web.Pages
         using var clusteredImage = CreateColorizedClusteredImage(labels, width, height, KMeans_K);
 
         // Save clustered result
-        var kmeansFileName = _baseFileName + "_kmeans.png";
-        var kmeansPath = Path.Combine("wwwroot", "images", kmeansFileName);
-        await clusteredImage.SaveAsPngAsync(kmeansPath);
-        KMeansImageUrl = $"/images/{kmeansFileName}";
+        KMeansImageUrl = await SaveProcessedImageAsync(clusteredImage, _baseFileName + "_kmeans");
       }
 
       return Page();
@@ -366,7 +383,7 @@ namespace MedicalImageAnalysis.Web.Pages
       return colors;
     }
     #endregion
-    
+
     // Handler for applying PCA preprocessing
     public async Task<IActionResult> OnPostApplyPCAAsync()
     {
@@ -377,39 +394,26 @@ namespace MedicalImageAnalysis.Web.Pages
         var width = originalImage.Width;
         var height = originalImage.Height;
 
-        // Extract pixel data from the image
-        var grayscalePixels = new byte[width * height];
-        originalImage.ProcessPixelRows(accessor =>
-        {
-          for (int y = 0; y < height; y++)
-          {
-            var row = accessor.GetRowSpan(y);
-            for (int x = 0; x < width; x++)
-            {
-              grayscalePixels[y * width + x] = row[x].PackedValue;
-            }
-          }
-        });
+        // Extract byte[]pixel data from the image
+        var grayscalePixels = ExtractPixelDataFromImage(originalImage, width, height);
 
         // Apply PCA preprocessing
         var pcaPixels = _pcaService.ApplyPCA(grayscalePixels, width, height, PCAComponents);
-        
+
         // Compute explained variance ratios
         ExplainedVarianceRatios = _pcaService.ComputeExplainedVarianceRatio(grayscalePixels, width, height);
-        
+
         // Create image from PCA processed pixels
         using var pcaProcessedImage = Image.LoadPixelData<L8>(pcaPixels, width, height);
-        
+
         // Save PCA result
-        var pcaFileName = _baseFileName + "_pca.png";
-        var pcaPath = Path.Combine("wwwroot", "images", pcaFileName);
-        await pcaProcessedImage.SaveAsPngAsync(pcaPath);
-        PCAImageUrl = $"/images/{pcaFileName}";
+        PCAImageUrl = await SaveProcessedImageAsync(pcaProcessedImage, _baseFileName + "_pca");
       }
-      
+
       return Page();
     }
-    
+
+    #region Region Growing
     // Handler for applying region growing segmentation
     public async Task<IActionResult> OnPostApplyRegionGrowingAsync()
     {
@@ -420,19 +424,8 @@ namespace MedicalImageAnalysis.Web.Pages
         var width = originalImage.Width;
         var height = originalImage.Height;
 
-        // Extract pixel data from the image
-        var grayscalePixels = new byte[width * height];
-        originalImage.ProcessPixelRows(accessor =>
-        {
-          for (int y = 0; y < height; y++)
-          {
-            var row = accessor.GetRowSpan(y);
-            for (int x = 0; x < width; x++)
-            {
-              grayscalePixels[y * width + x] = row[x].PackedValue;
-            }
-          }
-        });
+        // Extract byte[]pixel data from the image
+        var grayscalePixels = ExtractPixelDataFromImage(originalImage, width, height);
 
         // Define seed point at image center
         var seedPoint = new System.Drawing.Point(width / 2, height / 2);
@@ -444,22 +437,20 @@ namespace MedicalImageAnalysis.Web.Pages
         using var segmentedImage = CreateBinarySegmentedImage(regionMask, width, height);
 
         // Save region growing result
-        var regionGrowingFileName = _baseFileName + "_regiongrowing.png";
-        var regionGrowingPath = Path.Combine("wwwroot", "images", regionGrowingFileName);
-        await segmentedImage.SaveAsPngAsync(regionGrowingPath);
-        RegionGrowingImageUrl = $"/images/{regionGrowingFileName}";
+        RegionGrowingImageUrl = await SaveProcessedImageAsync(segmentedImage, _baseFileName + "_regiongrowing");
       }
 
       return Page();
     }
-    
+
     /// <summary>
     /// Creates a binary image based on region mask.
+    /// All logic handles Image objects is placed in model file
     /// </summary>
     private Image<L8> CreateBinarySegmentedImage(byte[] regionMask, int width, int height)
     {
       var image = new Image<L8>(width, height);
-      
+
       image.ProcessPixelRows(accessor =>
       {
         for (int y = 0; y < height; y++)
@@ -473,9 +464,10 @@ namespace MedicalImageAnalysis.Web.Pages
           }
         }
       });
-      
+
       return image;
     }
+    #endregion
     
     #region Watershed Segmentation
     // Handler for applying watershed segmentation
@@ -488,19 +480,8 @@ namespace MedicalImageAnalysis.Web.Pages
         var width = originalImage.Width;
         var height = originalImage.Height;
 
-        // Extract pixel data from the image
-        var grayscalePixels = new byte[width * height];
-        originalImage.ProcessPixelRows(accessor =>
-        {
-          for (int y = 0; y < height; y++)
-          {
-            var row = accessor.GetRowSpan(y);
-            for (int x = 0; x < width; x++)
-            {
-              grayscalePixels[y * width + x] = row[x].PackedValue;
-            }
-          }
-        });
+        // Extract byte[]pixel data from the image
+        var grayscalePixels = ExtractPixelDataFromImage(originalImage, width, height);
 
         // Apply watershed segmentation
         var labels = _watershedService.ApplyWatershed(grayscalePixels, width, height);
@@ -509,10 +490,7 @@ namespace MedicalImageAnalysis.Web.Pages
         using var watershedImage = CreateColorizedWatershedImage(labels, width, height);
 
         // Save watershed result
-        var watershedFileName = _baseFileName + "_watershed.png";
-        var watershedPath = Path.Combine("wwwroot", "images", watershedFileName);
-        await watershedImage.SaveAsPngAsync(watershedPath);
-        WatershedImageUrl = $"/images/{watershedFileName}";
+        WatershedImageUrl = await SaveProcessedImageAsync(watershedImage, _baseFileName + "_watershed");
       }
 
       return Page();
