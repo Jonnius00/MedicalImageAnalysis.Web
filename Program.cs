@@ -4,6 +4,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorPages();
+builder.Services.AddSingleton<OtsuService>();
 builder.Services.AddSingleton<KMeansService>();
 builder.Services.AddSingleton<PCAPreprocessingService>();
 builder.Services.AddSingleton<RegionGrowingService>();

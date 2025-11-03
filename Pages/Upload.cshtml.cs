@@ -1,5 +1,5 @@
-using System.IO;
-using System.Linq;
+// using System.IO;
+// using System.Linq;
 using Dicom;
 using Dicom.Imaging;
 using Microsoft.AspNetCore.Mvc;
@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Logging;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
+// using SixLabors.ImageSharp.Processing;
 using MedicalImageAnalysis.Web.Services; // Added for KMeansService
 
 /// <summary>
@@ -40,15 +40,15 @@ namespace MedicalImageAnalysis.Web.Pages
     
     public string? OtsuImageUrl { get; private set; }
     
-    public string? KMeansImageUrl { get; private set; } // For K-means clustered image
+    public string? KMeansImageUrl { get; private set; } // K-means clustered image
     
-    public string? PCAImageUrl { get; private set; } // For PCA preprocessed image
+    public string? PCAImageUrl { get; private set; } // PCA preprocessed image
     
-    public string? RegionGrowingImageUrl { get; private set; } // For region growing segmented image
+    public string? RegionGrowingImageUrl { get; private set; } // region growing segmented image
     
-    public double[]? ExplainedVarianceRatios { get; private set; } // For PCA explained variance ratios
+    public double[]? ExplainedVarianceRatios { get; private set; } // PCA explained variance ratios
     
-    public string? WatershedImageUrl { get; private set; } // For watershed segmented image
+    public string? WatershedImageUrl { get; private set; } // watershed segmented image
     
     [BindProperty]
     public int KMeans_K { get; set; } = 3;      // Number of clusters for K-means, default to 3
@@ -64,16 +64,18 @@ namespace MedicalImageAnalysis.Web.Pages
     public int NumberOfFrames { get; private set; } = 1; // Number of frames in DICOM file
 
     private readonly ILogger<UploadModel> _logger;
-    private readonly KMeansService _kMeansService;      // K-means service instance
+    private readonly OtsuService _otsuService;            // Otsu service instance
+    private readonly KMeansService _kMeansService;        // K-means service instance
     private readonly PCAPreprocessingService _pcaService; // PCA preprocessing service instance
     private readonly RegionGrowingService _regionGrowingService; // Region growing service instance
     private readonly WatershedService _watershedService; // Watershed service instance
     // Removed [BindProperty] attribute as we'll compute this dynamically
     private string _baseFileName => GetBaseFileName();
     
-    public UploadModel(ILogger<UploadModel> logger, KMeansService kMeansService, PCAPreprocessingService pcaService, RegionGrowingService regionGrowingService, WatershedService watershedService)
+    public UploadModel(ILogger<UploadModel> logger, OtsuService otsuService , KMeansService kMeansService, PCAPreprocessingService pcaService, RegionGrowingService regionGrowingService, WatershedService watershedService)
     {
       _logger = logger;
+      _otsuService = otsuService;
       _kMeansService = kMeansService;
       _pcaService = pcaService;
       _regionGrowingService = regionGrowingService;
@@ -212,7 +214,7 @@ namespace MedicalImageAnalysis.Web.Pages
     }
 
     # region OTSU Thresholding
-    // Separate OnPostApplyOtsuAsync handler (more interactive, needs image caching)
+    // Separate OnPostApplyOtsuAsync handler
     public async Task<IActionResult> OnPostApplyOtsuAsync()
     {
       // Reload original image from DisplayImageUrl
@@ -231,15 +233,18 @@ namespace MedicalImageAnalysis.Web.Pages
           {
             var row = accessor.GetRowSpan(y);
             for (int x = 0; x < width; x++)
-            {
-              grayscalePixels[y * width + x] = row[x].PackedValue; // Get the pixel value
+            { // Get the pixel value
+              grayscalePixels[y * width + x] = row[x].PackedValue; 
             }
           }
         });
 
         // Apply Otsu
-        byte otsuThreshold = ComputeOtsuThreshold(grayscalePixels);
-        using var binaryImage = ApplyOtsuThresholding(grayscalePixels, width, height, otsuThreshold);
+        byte otsuThreshold = _otsuService.ComputeOtsuThreshold(grayscalePixels);
+        byte[] binaryPixels = _otsuService.ApplyOtsuThresholding(grayscalePixels, width, height, otsuThreshold);
+        
+        // Create binary image from binary pixel data
+        using var binaryImage = Image.LoadPixelData<L8>(binaryPixels, width, height);
 
         // Save binary result
         // var otsuFileName = Guid.NewGuid() + "_otsu.png";
@@ -252,71 +257,7 @@ namespace MedicalImageAnalysis.Web.Pages
       return Page();
     }
 
-    // helper for appying OTSU
-    private Image<Rgba32> ApplyOtsuThresholding(byte[] grayscalePixels, int width, int height, byte threshold)
-    {
-      // Create binary image
-      var binaryImage = new Image<Rgba32>(width, height);
-      binaryImage.ProcessPixelRows(accessor =>
-      {
-        for (int y = 0; y < height; y++)
-        {
-          var row = accessor.GetRowSpan(y);
-          for (int x = 0; x < width; x++)
-          {
-            byte gray = grayscalePixels[y * width + x];
-            byte binary = gray >= threshold ? (byte)255 : (byte)0;
-            row[x] = new Rgba32(binary, binary, binary, 255);
-          }
-        }
-      });
-
-      return binaryImage;
-    }
-    // helper for computing OTSU threshold
-    private byte ComputeOtsuThreshold(byte[] grayscalePixels)
-    {
-      const int L = 256; // byte is 0 to 255
-      var histogram = new int[L];
-
-      // Build histogram
-      foreach (var pixel in grayscalePixels)
-        histogram[pixel]++;
-
-      double totalPixels = grayscalePixels.Length;
-      double sum = 0;
-      for (int i = 0; i < L; i++)
-        sum += i * histogram[i];
-
-      double sumB = 0;
-      double wB = 0;
-      double wF = 0;
-      double varMax = 0;
-      byte threshold = 0;
-
-      for (int i = 0; i < L; i++) // Changed from byte to int to avoid CS0652 warning
-      {
-        wB += histogram[i];
-        if (wB == 0) continue;
-
-        wF = totalPixels - wB;
-        if (wF == 0) break;
-
-        sumB += i * histogram[i];
-        double mB = sumB / wB;
-        double mF = (sum - sumB) / wF;
-
-        double varBetween = wB * wF * Math.Pow(mB - mF, 2);
-        if (varBetween > varMax)
-        {
-          varMax = varBetween;
-          threshold = (byte)i; // Cast to byte when assigning
-        }
-      }
-
-      return threshold;
-    }
-    #endregion
+     #endregion
 
     #region KMeans Clustering
     // Handler for applying K-means clustering
