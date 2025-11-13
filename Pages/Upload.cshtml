@@ -14,22 +14,122 @@
 @* PREVIEW *@
 @if (Model.DisplayImageUrl != null) 
 {
-  <h3>Preview:</h3>
-  <img src="@Model.DisplayImageUrl" style="max-width: 800px; border: 1px solid #ccc;" />
+  <h3>Image Processing Results</h3>
   
-  @if (Model.NumberOfFrames > 1)
-  {
-    <div style="margin-top: 10px; padding: 10px; background: #e7f3ff; border-radius: 4px;">
-      <strong>Multi-frame DICOM detected:</strong> @Model.NumberOfFrames frames available for PCA analysis
+  <div class="image-grid">
+    <!-- Original Image -->
+    <div class="image-card">
+      <div class="image-header">
+        <h4>Original Image</h4>
+      </div>
+      <div class="image-container">
+        <img src="@Model.DisplayImageUrl" class="grid-image" />
+      </div>
+      @if (Model.NumberOfFrames > 1)
+      {
+        <div class="image-info">
+          Multi-frame DICOM: @Model.NumberOfFrames frames
+        </div>
+      }
     </div>
-  }
+    
+    <!-- Otsu Result -->
+    @if (Model.OtsuImageUrl != null)
+    {
+      <div class="image-card">
+        <div class="image-header">
+          <h4>Otsu Thresholding</h4>
+        </div>
+        <div class="image-container">
+          <img src="@Model.OtsuImageUrl" class="grid-image" />
+        </div>
+      </div>
+    }
+    
+    <!-- K-means Result -->
+    @if (Model.KMeansImageUrl != null)
+    {
+      <div class="image-card">
+        <div class="image-header">
+          <h4>K-means (K=@Model.KMeans_K)</h4>
+        </div>
+        <div class="image-container">
+          <img src="@Model.KMeansImageUrl" class="grid-image" />
+        </div>
+      </div>
+    }
+    
+    <!-- PCA Result -->
+    @if (Model.PCAImageUrl != null)
+    {
+      <div class="image-card">
+        <div class="image-header">
+          <h4>PCA (@Model.PCAComponents components)</h4>
+        </div>
+        <div class="image-container">
+          <img src="@Model.PCAImageUrl" class="grid-image" />
+        </div>
+        @if (Model.ExplainedVarianceRatios != null && Model.ExplainedVarianceRatios.Length > 0)
+        {
+          <div class="image-info">
+            Variance: @((Model.ExplainedVarianceRatios.Take(Model.PCAComponents).Sum() * 100).ToString("F2"))%
+          </div>
+        }
+      </div>
+    }
+    
+    <!-- Region Growing Result -->
+    @if (Model.RegionGrowingImageUrl != null)
+    {
+      <div class="image-card">
+        <div class="image-header">
+          <h4>Region Growing (Tolerance=@Model.RegionGrowingTolerance)</h4>
+        </div>
+        <div class="image-container">
+          <img src="@Model.RegionGrowingImageUrl" class="grid-image" />
+        </div>
+      </div>
+    }
+    
+    <!-- Watershed Result -->
+    @if (Model.WatershedImageUrl != null)
+    {
+      <div class="image-card">
+        <div class="image-header">
+          <h4>Watershed</h4>
+        </div>
+        <div class="image-container">
+          <img src="@Model.WatershedImageUrl" class="grid-image" />
+        </div>
+      </div>
+    }
+    
+    <!-- Empty placeholders for grid consistency -->
+    @for (int i = 0; i < 9 - 1 - (Model.OtsuImageUrl != null ? 1 : 0) - (Model.KMeansImageUrl != null ? 1 : 0) - (Model.PCAImageUrl != null ? 1 : 0) - (Model.RegionGrowingImageUrl != null ? 1 : 0) - (Model.WatershedImageUrl != null ? 1 : 0); i++)
+    {
+      <div class="image-card empty-card">
+        <div class="image-header">
+          <h4>&nbsp;</h4>
+        </div>
+        <div class="image-container">
+          <!-- Empty slot -->
+        </div>
+      </div>
+    }
+  </div>
   
-  <div style="margin-top: 10px;">
+  <!-- Buttons to apply algoithms -->
+  <div style="margin-top: 20px;">
     <form method="post" asp-page-handler="ApplyOtsu" style="display: inline-block; margin-right: 10px;">
         <input type="hidden" asp-for="DisplayImageUrl" />
         <input type="hidden" asp-for="KMeans_K" />
         <input type="hidden" asp-for="PCAComponents" />
         <input type="hidden" asp-for="NumberOfFrames" />
+        <input type="hidden" asp-for="OtsuImageUrl" />
+        <input type="hidden" asp-for="KMeansImageUrl" />
+        <input type="hidden" asp-for="PCAImageUrl" />
+        <input type="hidden" asp-for="RegionGrowingImageUrl" />
+        <input type="hidden" asp-for="WatershedImageUrl" />
         <button type="submit">Apply Otsu Thresholding</button>
     </form>
     
@@ -37,6 +137,11 @@
         <input type="hidden" asp-for="DisplayImageUrl" />
         <input type="hidden" asp-for="PCAComponents" />
         <input type="hidden" asp-for="NumberOfFrames" />
+        <input type="hidden" asp-for="OtsuImageUrl" />
+        <input type="hidden" asp-for="KMeansImageUrl" />
+        <input type="hidden" asp-for="PCAImageUrl" />
+        <input type="hidden" asp-for="RegionGrowingImageUrl" />
+        <input type="hidden" asp-for="WatershedImageUrl" />
         <label for="KMeans_K">Clusters (K):</label>
         <input asp-for="KMeans_K" type="number" min="2" max="10" style="width: 60px;" />
         <button type="submit">Apply K-means</button>
@@ -46,6 +151,11 @@
         <input type="hidden" asp-for="DisplayImageUrl" />
         <input type="hidden" asp-for="KMeans_K" />
         <input type="hidden" asp-for="NumberOfFrames" />
+        <input type="hidden" asp-for="OtsuImageUrl" />
+        <input type="hidden" asp-for="KMeansImageUrl" />
+        <input type="hidden" asp-for="PCAImageUrl" />
+        <input type="hidden" asp-for="RegionGrowingImageUrl" />
+        <input type="hidden" asp-for="WatershedImageUrl" />
         <label for="PCAComponents">PCA Components:</label>
         <input asp-for="PCAComponents" type="number" min="1" max="10" style="width: 60px;" />
         <button type="submit">Apply PCA</button>
@@ -56,6 +166,11 @@
         <input type="hidden" asp-for="KMeans_K" />
         <input type="hidden" asp-for="PCAComponents" />
         <input type="hidden" asp-for="NumberOfFrames" />
+        <input type="hidden" asp-for="OtsuImageUrl" />
+        <input type="hidden" asp-for="KMeansImageUrl" />
+        <input type="hidden" asp-for="PCAImageUrl" />
+        <input type="hidden" asp-for="RegionGrowingImageUrl" />
+        <input type="hidden" asp-for="WatershedImageUrl" />
         <label for="RegionGrowingTolerance">Tolerance:</label>
         <input asp-for="RegionGrowingTolerance" type="number" min="0" max="255" style="width: 60px;" />
         <button type="submit">Apply Region Growing</button>
@@ -66,59 +181,18 @@
         <input type="hidden" asp-for="KMeans_K" />
         <input type="hidden" asp-for="PCAComponents" />
         <input type="hidden" asp-for="NumberOfFrames" />
+        <input type="hidden" asp-for="OtsuImageUrl" />
+        <input type="hidden" asp-for="KMeansImageUrl" />
+        <input type="hidden" asp-for="PCAImageUrl" />
+        <input type="hidden" asp-for="RegionGrowingImageUrl" />
+        <input type="hidden" asp-for="WatershedImageUrl" />
         <button type="submit">Apply Watershed</button>
     </form>
   </div>
 }
 
-@if (Model.OtsuImageUrl != null)
-{
-    <h3>Otsu Result:</h3>
-    <img src="@Model.OtsuImageUrl" style="max-width: 800px; border: 1px solid #ccc;" />
-}
-
-@if (Model.KMeansImageUrl != null)
-{
-    <h3>K-means Result (K=@Model.KMeans_K):</h3>
-    <img src="@Model.KMeansImageUrl" style="max-width: 800px; border: 1px solid #ccc;" />
-}
-
-@if (Model.PCAImageUrl != null)
-{
-    <h3>PCA Result (@Model.PCAComponents components):</h3>
-    <img src="@Model.PCAImageUrl" style="max-width: 800px; border: 1px solid #ccc;" />
-    
-    @if (Model.ExplainedVarianceRatios != null && Model.ExplainedVarianceRatios.Length > 0)
-    {
-        <div style="margin-top: 10px; padding: 10px; background: #f5f5f5; border-radius: 4px;">
-            <h4>Explained Variance Ratios:</h4>
-            <ul>
-                @for (int i = 0; i < Math.Min(Model.PCAComponents, Model.ExplainedVarianceRatios.Length); i++)
-                {
-                    <li>Component @(i+1): @((Model.ExplainedVarianceRatios[i] * 100).ToString("F2"))%</li>
-                }
-            </ul>
-            @{
-                var totalVariance = Model.ExplainedVarianceRatios.Take(Model.PCAComponents).Sum() * 100;
-            }
-            <p><strong>Total explained variance: @totalVariance.ToString("F2")%</strong></p>
-        </div>
-    }
-}
-
-@if (Model.RegionGrowingImageUrl != null)
-{
-    <h3>Region Growing Result (Tolerance=@Model.RegionGrowingTolerance):</h3>
-    <img src="@Model.RegionGrowingImageUrl" style="max-width: 800px; border: 1px solid #ccc;" />
-}
-
-@if (Model.WatershedImageUrl != null)
-{
-    <h3>Watershed Result:</h3>
-    <img src="@Model.WatershedImageUrl" style="max-width: 800px; border: 1px solid #ccc;" />
-}
-
-@if (Model.Modality != null)
+<!-- DICOM Metadata -->
+@if (Model.Modality != null) 
 {
   <div style="margin-top: 20px; padding: 10px; background: #f5f5f5; border-radius: 4px;">
       <h4>DICOM Metadata</h4>

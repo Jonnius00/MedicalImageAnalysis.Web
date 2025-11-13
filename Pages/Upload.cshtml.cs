@@ -1,5 +1,5 @@
-// using System.IO;
-// using System.Linq;
+using System.IO;
+using System.Linq;
 using Dicom;
 using Dicom.Imaging;
 using Microsoft.AspNetCore.Mvc;
@@ -32,23 +32,27 @@ namespace MedicalImageAnalysis.Web.Pages
   public class UploadModel : PageModel
   {
     [BindProperty]
-    public IFormFile? UploadedFile { get; set; }
-    // Represents a file sent with the HttpRequest.
+    public IFormFile? UploadedFile { get; set; }     // Represents a file sent with the HttpRequest.
 
     [BindProperty]
     public string? DisplayImageUrl { get; set; }
     
-    public string? OtsuImageUrl { get; private set; }
+    [BindProperty]
+    public string? OtsuImageUrl { get; set; }
     
-    public string? KMeansImageUrl { get; private set; } // K-means clustered image
+    [BindProperty]
+    public string? KMeansImageUrl { get; set; } // K-means clustered image
     
-    public string? PCAImageUrl { get; private set; } // PCA preprocessed image
+    [BindProperty]
+    public string? PCAImageUrl { get; set; } // PCA preprocessed image
     
-    public string? RegionGrowingImageUrl { get; private set; } // region growing segmented image
+    [BindProperty]
+    public string? RegionGrowingImageUrl { get; set; } // region growing segmented image
     
     public double[]? ExplainedVarianceRatios { get; private set; } // PCA explained variance ratios
     
-    public string? WatershedImageUrl { get; private set; } // watershed segmented image
+    [BindProperty]
+    public string? WatershedImageUrl { get; set; } // watershed segmented image
     
     [BindProperty]
     public int KMeans_K { get; set; } = 3;      // Number of clusters for K-means, default to 3
@@ -57,7 +61,7 @@ namespace MedicalImageAnalysis.Web.Pages
     public int PCAComponents { get; set; } = 2; // Number of PCA components, default to 2
     
     [BindProperty]
-    public int RegionGrowingTolerance { get; set; } = 10; // Intensity difference threshold for region growing, default to 10
+    public int RegionGrowingTolerance { get; set; } = 50; // Intensity difference threshold for region growing, default to 10
     
     public string? Modality { get; private set; } 
     public string? PatientName { get; private set; }
@@ -70,7 +74,7 @@ namespace MedicalImageAnalysis.Web.Pages
     private readonly RegionGrowingService _regionGrowingService; // Region growing service instance
     private readonly WatershedService _watershedService; // Watershed service instance
 
-    private string _baseFileName => GetBaseFileName();   // shared GUID file name for cached images
+    private readonly string _baseFileName;    // shared GUID file name for cached images
 
     public UploadModel(ILogger<UploadModel> logger, OtsuService otsuService, KMeansService kMeansService, PCAPreprocessingService pcaService, RegionGrowingService regionGrowingService, WatershedService watershedService)
     {
@@ -80,6 +84,7 @@ namespace MedicalImageAnalysis.Web.Pages
       _pcaService = pcaService;
       _regionGrowingService = regionGrowingService;
       _watershedService = watershedService;
+      _baseFileName = GetBaseFileName();
     }
 
     #region Helper methods
@@ -135,13 +140,14 @@ namespace MedicalImageAnalysis.Web.Pages
     /// <returns>URL to the saved image</returns>
     private async Task<string> SaveProcessedImageAsync(Image image, string fileName, string fileExtension = "png")
     {
-      // var fileName = $"{fileName}.{fileExtension}";
+      fileName = $"{fileName}.{fileExtension}";
       var filePath = Path.Combine("wwwroot", "images", fileName);
       
       // Save as PNG (lossless format suitable for medical images)
       await image.SaveAsPngAsync(filePath);
       
-      return $"/images/{fileName}.{fileExtension}";
+      return $"/images/{fileName}";
+      // return $"{filePath}.{fileExtension}";
     }
 
     #endregion
@@ -233,7 +239,7 @@ namespace MedicalImageAnalysis.Web.Pages
           _logger.LogInformation("Uploading standard image: {FileName}", UploadedFile.FileName);
           await using var stream = new FileStream(outputFilePath, FileMode.Create);
           await UploadedFile.CopyToAsync(stream);
-          DisplayImageUrl = $"/images/{outputFileName}";
+          DisplayImageUrl = $"/images/{outputFilePath}";
         }
         else // Unsupported file format
         {
