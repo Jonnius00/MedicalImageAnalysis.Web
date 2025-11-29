@@ -111,9 +111,8 @@ Project_Plan.txt
 
 3. Visualization & Comparison. 
   After running any algorithm, show:
-  Original.
-  Result.
-  Toggle overlay ( consider but not neccessary use CSS opacity or <canvas> ).
+  Original. Resulted image set.
+  x - Toggle overlay ( consider but not neccessary use CSS opacity or <canvas> ).
   Consider to add execution time (use Stopwatch).
   ✅ Outcome: Side-by-side comparison with performance metrics.
 
