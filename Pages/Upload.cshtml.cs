@@ -63,9 +63,12 @@ namespace MedicalImageAnalysis.Web.Pages
     [BindProperty]
     public int RegionGrowingTolerance { get; set; } = 50; // Intensity difference threshold for region growing, default to 10
     
-    public string? Modality { get; private set; } 
-    public string? PatientName { get; private set; }
-    public int NumberOfFrames { get; private set; } = 1; // Number of frames in DICOM file
+    [BindProperty]
+    public string? Modality { get; set; } 
+    [BindProperty]
+    public string? PatientName { get; set; }
+    [BindProperty]
+    public int NumberOfFrames { get; set; } = 1; // Number of frames in DICOM file
 
     private readonly ILogger<UploadModel> _logger;
     private readonly OtsuService _otsuService;            // Otsu service instance

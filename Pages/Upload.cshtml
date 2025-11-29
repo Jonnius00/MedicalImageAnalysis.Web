@@ -15,6 +15,88 @@
 @if (Model.DisplayImageUrl != null) 
 {
   <h3>Image Processing Results</h3>
+
+  <!-- Buttons to apply algoithms -->
+  <div style="margin-top: 20px;">
+    <form method="post" asp-page-handler="ApplyOtsu" style="display: inline-block; margin-right: 10px;">
+        <input type="hidden" asp-for="DisplayImageUrl" />
+        <input type="hidden" asp-for="KMeans_K" />
+        <input type="hidden" asp-for="PCAComponents" />
+        <input type="hidden" asp-for="NumberOfFrames" />
+        <input type="hidden" asp-for="Modality" />
+        <input type="hidden" asp-for="PatientName" />
+        <input type="hidden" asp-for="OtsuImageUrl" />
+        <input type="hidden" asp-for="KMeansImageUrl" />
+        <input type="hidden" asp-for="PCAImageUrl" />
+        <input type="hidden" asp-for="RegionGrowingImageUrl" />
+        <input type="hidden" asp-for="WatershedImageUrl" />
+        <button type="submit">Apply Otsu Thresholding</button>
+    </form>
+    
+    <form method="post" asp-page-handler="ApplyKMeans" style="display: inline-block; margin-right: 10px;">
+        <input type="hidden" asp-for="DisplayImageUrl" />
+        <input type="hidden" asp-for="PCAComponents" />
+        <input type="hidden" asp-for="NumberOfFrames" />
+        <input type="hidden" asp-for="Modality" />
+        <input type="hidden" asp-for="PatientName" />
+        <input type="hidden" asp-for="OtsuImageUrl" />
+        <input type="hidden" asp-for="KMeansImageUrl" />
+        <input type="hidden" asp-for="PCAImageUrl" />
+        <input type="hidden" asp-for="RegionGrowingImageUrl" />
+        <input type="hidden" asp-for="WatershedImageUrl" />
+        <label for="KMeans_K">Clusters (K):</label>
+        <input asp-for="KMeans_K" type="number" min="2" max="10" style="width: 60px;" />
+        <button type="submit">Apply K-means</button>
+    </form>
+    
+    <form method="post" asp-page-handler="ApplyPCA" style="display: inline-block; margin-right: 10px;">
+        <input type="hidden" asp-for="DisplayImageUrl" />
+        <input type="hidden" asp-for="KMeans_K" />
+        <input type="hidden" asp-for="NumberOfFrames" />
+        <input type="hidden" asp-for="Modality" />
+        <input type="hidden" asp-for="PatientName" />
+        <input type="hidden" asp-for="OtsuImageUrl" />
+        <input type="hidden" asp-for="KMeansImageUrl" />
+        <input type="hidden" asp-for="PCAImageUrl" />
+        <input type="hidden" asp-for="RegionGrowingImageUrl" />
+        <input type="hidden" asp-for="WatershedImageUrl" />
+        <label for="PCAComponents">PCA Components:</label>
+        <input asp-for="PCAComponents" type="number" min="1" max="10" style="width: 60px;" />
+        <button type="submit">Apply PCA</button>
+    </form>
+    
+    <form method="post" asp-page-handler="ApplyRegionGrowing" style="display: inline-block;">
+        <input type="hidden" asp-for="DisplayImageUrl" />
+        <input type="hidden" asp-for="KMeans_K" />
+        <input type="hidden" asp-for="PCAComponents" />
+        <input type="hidden" asp-for="NumberOfFrames" />
+        <input type="hidden" asp-for="Modality" />
+        <input type="hidden" asp-for="PatientName" />
+        <input type="hidden" asp-for="OtsuImageUrl" />
+        <input type="hidden" asp-for="KMeansImageUrl" />
+        <input type="hidden" asp-for="PCAImageUrl" />
+        <input type="hidden" asp-for="RegionGrowingImageUrl" />
+        <input type="hidden" asp-for="WatershedImageUrl" />
+        <label for="RegionGrowingTolerance">Tolerance:</label>
+        <input asp-for="RegionGrowingTolerance" type="number" min="0" max="255" style="width: 60px;" />
+        <button type="submit">Apply Region Growing</button>
+    </form>
+    
+    <form method="post" asp-page-handler="ApplyWatershed" style="display: inline-block;">
+        <input type="hidden" asp-for="DisplayImageUrl" />
+        <input type="hidden" asp-for="KMeans_K" />
+        <input type="hidden" asp-for="PCAComponents" />
+        <input type="hidden" asp-for="NumberOfFrames" />
+        <input type="hidden" asp-for="Modality" />
+        <input type="hidden" asp-for="PatientName" />
+        <input type="hidden" asp-for="OtsuImageUrl" />
+        <input type="hidden" asp-for="KMeansImageUrl" />
+        <input type="hidden" asp-for="PCAImageUrl" />
+        <input type="hidden" asp-for="RegionGrowingImageUrl" />
+        <input type="hidden" asp-for="WatershedImageUrl" />
+        <button type="submit">Apply Watershed</button>
+    </form>
+  </div>
   
   <div class="image-grid">
     <!-- Original Image -->
@@ -103,92 +185,8 @@
         </div>
       </div>
     }
-    
-    <!-- Empty placeholders for grid consistency -->
-    @for (int i = 0; i < 9 - 1 - (Model.OtsuImageUrl != null ? 1 : 0) - (Model.KMeansImageUrl != null ? 1 : 0) - (Model.PCAImageUrl != null ? 1 : 0) - (Model.RegionGrowingImageUrl != null ? 1 : 0) - (Model.WatershedImageUrl != null ? 1 : 0); i++)
-    {
-      <div class="image-card empty-card">
-        <div class="image-header">
-          <h4>&nbsp;</h4>
-        </div>
-        <div class="image-container">
-          <!-- Empty slot -->
-        </div>
-      </div>
-    }
   </div>
   
-  <!-- Buttons to apply algoithms -->
-  <div style="margin-top: 20px;">
-    <form method="post" asp-page-handler="ApplyOtsu" style="display: inline-block; margin-right: 10px;">
-        <input type="hidden" asp-for="DisplayImageUrl" />
-        <input type="hidden" asp-for="KMeans_K" />
-        <input type="hidden" asp-for="PCAComponents" />
-        <input type="hidden" asp-for="NumberOfFrames" />
-        <input type="hidden" asp-for="OtsuImageUrl" />
-        <input type="hidden" asp-for="KMeansImageUrl" />
-        <input type="hidden" asp-for="PCAImageUrl" />
-        <input type="hidden" asp-for="RegionGrowingImageUrl" />
-        <input type="hidden" asp-for="WatershedImageUrl" />
-        <button type="submit">Apply Otsu Thresholding</button>
-    </form>
-    
-    <form method="post" asp-page-handler="ApplyKMeans" style="display: inline-block; margin-right: 10px;">
-        <input type="hidden" asp-for="DisplayImageUrl" />
-        <input type="hidden" asp-for="PCAComponents" />
-        <input type="hidden" asp-for="NumberOfFrames" />
-        <input type="hidden" asp-for="OtsuImageUrl" />
-        <input type="hidden" asp-for="KMeansImageUrl" />
-        <input type="hidden" asp-for="PCAImageUrl" />
-        <input type="hidden" asp-for="RegionGrowingImageUrl" />
-        <input type="hidden" asp-for="WatershedImageUrl" />
-        <label for="KMeans_K">Clusters (K):</label>
-        <input asp-for="KMeans_K" type="number" min="2" max="10" style="width: 60px;" />
-        <button type="submit">Apply K-means</button>
-    </form>
-    
-    <form method="post" asp-page-handler="ApplyPCA" style="display: inline-block; margin-right: 10px;">
-        <input type="hidden" asp-for="DisplayImageUrl" />
-        <input type="hidden" asp-for="KMeans_K" />
-        <input type="hidden" asp-for="NumberOfFrames" />
-        <input type="hidden" asp-for="OtsuImageUrl" />
-        <input type="hidden" asp-for="KMeansImageUrl" />
-        <input type="hidden" asp-for="PCAImageUrl" />
-        <input type="hidden" asp-for="RegionGrowingImageUrl" />
-        <input type="hidden" asp-for="WatershedImageUrl" />
-        <label for="PCAComponents">PCA Components:</label>
-        <input asp-for="PCAComponents" type="number" min="1" max="10" style="width: 60px;" />
-        <button type="submit">Apply PCA</button>
-    </form>
-    
-    <form method="post" asp-page-handler="ApplyRegionGrowing" style="display: inline-block;">
-        <input type="hidden" asp-for="DisplayImageUrl" />
-        <input type="hidden" asp-for="KMeans_K" />
-        <input type="hidden" asp-for="PCAComponents" />
-        <input type="hidden" asp-for="NumberOfFrames" />
-        <input type="hidden" asp-for="OtsuImageUrl" />
-        <input type="hidden" asp-for="KMeansImageUrl" />
-        <input type="hidden" asp-for="PCAImageUrl" />
-        <input type="hidden" asp-for="RegionGrowingImageUrl" />
-        <input type="hidden" asp-for="WatershedImageUrl" />
-        <label for="RegionGrowingTolerance">Tolerance:</label>
-        <input asp-for="RegionGrowingTolerance" type="number" min="0" max="255" style="width: 60px;" />
-        <button type="submit">Apply Region Growing</button>
-    </form>
-    
-    <form method="post" asp-page-handler="ApplyWatershed" style="display: inline-block;">
-        <input type="hidden" asp-for="DisplayImageUrl" />
-        <input type="hidden" asp-for="KMeans_K" />
-        <input type="hidden" asp-for="PCAComponents" />
-        <input type="hidden" asp-for="NumberOfFrames" />
-        <input type="hidden" asp-for="OtsuImageUrl" />
-        <input type="hidden" asp-for="KMeansImageUrl" />
-        <input type="hidden" asp-for="PCAImageUrl" />
-        <input type="hidden" asp-for="RegionGrowingImageUrl" />
-        <input type="hidden" asp-for="WatershedImageUrl" />
-        <button type="submit">Apply Watershed</button>
-    </form>
-  </div>
 }
 
 <!-- DICOM Metadata -->
