@@ -57,16 +57,18 @@ namespace MedicalImageAnalysis.Web.Services
 
         /// <summary>
         /// Computes a distance transform approximation for the binary image.
+        /// Distance is measured from edges/boundaries. Foreground object interiors get high values.
         /// </summary>
         private float[] ComputeDistanceTransform(byte[] binaryMask, int width, int height)
         {
             var distanceMap = new float[width * height];
 
             // Initialize distance map
-            // Foreground pixels (255) get 0 distance, background pixels get large value
+            // Background pixels (0) get 0 distance (edges)
+            // Foreground pixels (255) get large initial value (interior of objects)
             for (int i = 0; i < binaryMask.Length; i++)
             {
-                distanceMap[i] = binaryMask[i] == 255 ? 0 : float.MaxValue;
+                distanceMap[i] = binaryMask[i] == 0 ? 0 : float.MaxValue;
             }
 
             // Forward pass - top to bottom, left to right
@@ -75,22 +77,25 @@ namespace MedicalImageAnalysis.Web.Services
                 for (int x = 1; x < width; x++)
                 {
                     int index = y * width + x;
-                    if (distanceMap[index] != 0)
+                    if (distanceMap[index] != 0 && distanceMap[index] != float.MaxValue)
                     {
-                        // Check neighbors (top, left, top-left, top-right)
+                        // Check neighbors and update with minimum distance
                         float minDistance = distanceMap[index];
                         
                         // Top
-                        minDistance = Math.Min(minDistance, distanceMap[(y - 1) * width + x] + 1);
+                        if (distanceMap[(y - 1) * width + x] != 0)
+                            minDistance = Math.Min(minDistance, distanceMap[(y - 1) * width + x] + 1);
                         
                         // Left
-                        minDistance = Math.Min(minDistance, distanceMap[y * width + (x - 1)] + 1);
+                        if (distanceMap[y * width + (x - 1)] != 0)
+                            minDistance = Math.Min(minDistance, distanceMap[y * width + (x - 1)] + 1);
                         
                         // Top-left
-                        minDistance = Math.Min(minDistance, distanceMap[(y - 1) * width + (x - 1)] + 1.414f);
+                        if (distanceMap[(y - 1) * width + (x - 1)] != 0)
+                            minDistance = Math.Min(minDistance, distanceMap[(y - 1) * width + (x - 1)] + 1.414f);
                         
                         // Top-right
-                        if (x < width - 1)
+                        if (x < width - 1 && distanceMap[(y - 1) * width + (x + 1)] != 0)
                         {
                             minDistance = Math.Min(minDistance, distanceMap[(y - 1) * width + (x + 1)] + 1.414f);
                         }
@@ -106,22 +111,25 @@ namespace MedicalImageAnalysis.Web.Services
                 for (int x = width - 2; x >= 0; x--)
                 {
                     int index = y * width + x;
-                    if (distanceMap[index] != 0)
+                    if (distanceMap[index] != 0 && distanceMap[index] != float.MaxValue)
                     {
-                        // Check neighbors (bottom, right, bottom-left, bottom-right)
+                        // Check neighbors and update with minimum distance
                         float minDistance = distanceMap[index];
                         
                         // Bottom
-                        minDistance = Math.Min(minDistance, distanceMap[(y + 1) * width + x] + 1);
+                        if (distanceMap[(y + 1) * width + x] != 0)
+                            minDistance = Math.Min(minDistance, distanceMap[(y + 1) * width + x] + 1);
                         
                         // Right
-                        minDistance = Math.Min(minDistance, distanceMap[y * width + (x + 1)] + 1);
+                        if (distanceMap[y * width + (x + 1)] != 0)
+                            minDistance = Math.Min(minDistance, distanceMap[y * width + (x + 1)] + 1);
                         
                         // Bottom-right
-                        minDistance = Math.Min(minDistance, distanceMap[(y + 1) * width + (x + 1)] + 1.414f);
+                        if (distanceMap[(y + 1) * width + (x + 1)] != 0)
+                            minDistance = Math.Min(minDistance, distanceMap[(y + 1) * width + (x + 1)] + 1.414f);
                         
                         // Bottom-left
-                        if (x > 0)
+                        if (x > 0 && distanceMap[(y + 1) * width + (x - 1)] != 0)
                         {
                             minDistance = Math.Min(minDistance, distanceMap[(y + 1) * width + (x - 1)] + 1.414f);
                         }
@@ -135,14 +143,14 @@ namespace MedicalImageAnalysis.Web.Services
         }
 
         /// <summary>
-        /// Finds local maxima in the distance map to use as markers.
+        /// Finds local maxima in the distance map to use as markers (seeds for watershed).
         /// </summary>
         private List<Point> FindMarkers(float[] distanceMap, int width, int height)
         {
             var markers = new List<Point>();
 
-            // Simple approach: find local maxima with a minimum distance value
-            float minDistanceThreshold = 5.0f; // Minimum distance value to consider
+            // Find local maxima - peaks in the distance map represent object centers
+            float minDistanceThreshold = 3.0f; // Minimum distance value to be considered as a potential marker
 
             for (int y = 1; y < height - 1; y++)
             {
@@ -151,11 +159,11 @@ namespace MedicalImageAnalysis.Web.Services
                     int index = y * width + x;
                     float centerValue = distanceMap[index];
 
-                    // Skip if value is too low
+                    // Skip if value is too low (background or very close to edge)
                     if (centerValue < minDistanceThreshold)
                         continue;
 
-                    // Check if this is a local maximum
+                    // Check if this is a local maximum (strictly greater than all neighbors)
                     bool isMaximum = true;
                     for (int dy = -1; dy <= 1 && isMaximum; dy++)
                     {
@@ -164,7 +172,8 @@ namespace MedicalImageAnalysis.Web.Services
                             if (dx == 0 && dy == 0) continue;
 
                             int neighborIndex = (y + dy) * width + (x + dx);
-                            if (distanceMap[neighborIndex] >= centerValue)
+                            // If any neighbor has equal or greater distance, it's not a strict local maximum
+                            if (distanceMap[neighborIndex] > centerValue)
                             {
                                 isMaximum = false;
                             }
@@ -182,12 +191,15 @@ namespace MedicalImageAnalysis.Web.Services
         }
 
         /// <summary>
-        /// Performs the actual watershed transformation.
+        /// Performs the actual watershed transformation using priority-based flooding.
+        /// Pixels are assigned to the watershed region of the nearest marker.
         /// </summary>
         private int[] PerformWatershed(float[] distanceMap, List<Point> markers, int width, int height)
         {
             var labels = new int[width * height];
-            var queue = new Queue<(Point point, int label)>();
+            
+            // Use priority queue for proper watershed flooding (highest distance first)
+            var queue = new PriorityQueue<(Point point, int label), float>();
 
             // Initialize all labels to -1 (unprocessed)
             for (int i = 0; i < labels.Length; i++)
@@ -195,15 +207,16 @@ namespace MedicalImageAnalysis.Web.Services
                 labels[i] = -1;
             }
 
-            // Label each marker with a unique ID and add to queue
+            // Label each marker with a unique ID and add to queue with high priority
             for (int i = 0; i < markers.Count; i++)
             {
                 int index = markers[i].Y * width + markers[i].X;
                 labels[index] = i + 1; // Label IDs start from 1
-                queue.Enqueue((markers[i], i + 1));
+                // Use negative distance for max-heap behavior (C# PriorityQueue is min-heap)
+                queue.Enqueue((markers[i], i + 1), -distanceMap[index]);
             }
 
-            // Process queue
+            // Process queue - expanding from markers based on distance values
             int[] dx = { -1, -1, -1, 0, 0, 1, 1, 1 };
             int[] dy = { -1, 0, 1, -1, 1, -1, 0, 1 };
 
@@ -222,17 +235,17 @@ namespace MedicalImageAnalysis.Web.Services
                     {
                         int newIndex = newY * width + newX;
 
-                        // If not yet labeled
+                        // If not yet labeled, assign to current region and continue flooding
                         if (labels[newIndex] == -1)
                         {
                             labels[newIndex] = currentLabel;
-                            queue.Enqueue((new Point(newX, newY), currentLabel));
+                            queue.Enqueue((new Point(newX, newY), currentLabel), -distanceMap[newIndex]);
                         }
                     }
                 }
             }
 
-            // Set any remaining unlabeled pixels to 0 (background)
+            // Set any remaining unlabeled pixels (background) to 0
             for (int i = 0; i < labels.Length; i++)
             {
                 if (labels[i] == -1)
